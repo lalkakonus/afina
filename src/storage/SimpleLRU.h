@@ -62,7 +62,8 @@ private:
 	lru_node * _last;
 
     // Index of nodes from list above, allows fast random access to elements by lru_node#key
-    std::map<std::reference_wrapper<std::string>, std::reference_wrapper<lru_node>> _lru_index;
+    //std::map<std::reference_wrapper<std::string>, std::reference_wrapper<lru_node>> _lru_index;
+    std::map<std::string, std::reference_wrapper<lru_node>> _lru_index;
 };
 
 } // namespace Backend
