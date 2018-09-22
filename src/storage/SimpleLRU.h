@@ -1,7 +1,7 @@
 #ifndef AFINA_STORAGE_SIMPLE_LRU_H
 #define AFINA_STORAGE_SIMPLE_LRU_H
 
-#include <map>
+#include <unordered_map>
 #include <memory>
 #include <mutex>
 #include <string>
@@ -68,7 +68,21 @@ private:
 
     // Index of nodes from list above, allows fast random access to elements by lru_node#key
     //std::map<std::reference_wrapper<std::string>, std::reference_wrapper<lru_node>> _lru_index;
-    std::map<std::string, std::reference_wrapper<lru_node>> _lru_index;
+    std::unordered_map<std::string, std::reference_wrapper<lru_node>> _lru_index;
+
+	bool release_space(size_t node_size) {
+		while (node_size + _curr_size > _max_size) {
+			if (_lru_head) {
+				_curr_size -= _lru_head->key.size() + _lru_head->value.size();
+			} else {
+				return false;
+			}
+			_lru_index.erase(_lru_head->key);
+			_lru_head = std::move(_lru_head->next); // similar to  "_lru_head.reset(_lru_head->next.release())"
+		}
+		return true;
+	}
+
 };
 
 } // namespace Backend
