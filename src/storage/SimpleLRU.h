@@ -21,7 +21,13 @@ public:
 
     ~SimpleLRU() {
         _lru_index.clear();
-        _lru_head.reset(); // TODO: Here is stack overflow
+        
+		while (_lru_head != nullptr){
+			std::unique_ptr<lru_node> freed = std::move(_lru_head);
+			_lru_head = std::move(freed -> next);
+		};
+		
+		_lru_head.reset();
     }
 
     // Implements Afina::Storage interface
@@ -42,11 +48,10 @@ public:
 private:
     // LRU cache node
     using lru_node = struct lru_node {
-  	std::string key;
+		std::string key;
         std::string value;
-        //std::unique_ptr<lru_node> prev;
-        lru_node * prev;
 		std::unique_ptr<lru_node> next;
+        lru_node * prev;
     };
 
     // Maximum number of bytes could be stored in this cache.
