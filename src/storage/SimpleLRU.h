@@ -17,18 +17,12 @@ namespace Backend {
  */
 class SimpleLRU : public Afina::Storage {
 public:
-    SimpleLRU(size_t max_size = 1024) : _max_size(max_size), _curr_size(0), _last(nullptr) {}
+    SimpleLRU(size_t max_size = 1024) : _max_size(max_size), _curr_size(0), _lru_first(nullptr),
+										_lru_last(nullptr){}
 
     ~SimpleLRU() {
-        _lru_index.clear();
-        
-		while (_lru_head != nullptr){
-			std::unique_ptr<lru_node> freed = std::move(_lru_head);
-			_lru_head = std::move(freed -> next);
-		};
-		
-		_lru_head.reset();
-    }
+    	ClearCache();
+	}
 
     // Implements Afina::Storage interface
     bool Put(const std::string &key, const std::string &value) override;
@@ -59,30 +53,21 @@ private:
     std::size_t _max_size;
     std::size_t _curr_size;
 
-    // Main storage of lru_nodes, elements in this list ordered descending by "freshness": in the head
+    // Main storage of lru_nodes, elements in this list ordered descending by "freshness": in the last
     // element that wasn't used for longest time.
     //
     // List owns all nodes
-    std::unique_ptr<lru_node> _lru_head;
-	lru_node * _last;
+	lru_node * _lru_first;
+    std::unique_ptr<lru_node> _lru_last;
 
     // Index of nodes from list above, allows fast random access to elements by lru_node#key
-    //std::map<std::reference_wrapper<std::string>, std::reference_wrapper<lru_node>> _lru_index;
     std::unordered_map<std::string, std::reference_wrapper<lru_node>> _lru_index;
 
-	bool release_space(size_t node_size) {
-		while (node_size + _curr_size > _max_size) {
-			if (_lru_head) {
-				_curr_size -= _lru_head->key.size() + _lru_head->value.size();
-			} else {
-				return false;
-			}
-			_lru_index.erase(_lru_head->key);
-			_lru_head = std::move(_lru_head->next); // similar to  "_lru_head.reset(_lru_head->next.release())"
-		}
-		return true;
-	}
+	bool ReleaseSpace(const size_t size);
+	
+	void MoveToStart(lru_node & node);
 
+	void ClearCache();
 };
 
 } // namespace Backend
