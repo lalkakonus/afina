@@ -59,6 +59,8 @@ private:
     // List owns all nodes
 	lru_node * _lru_first;
     std::unique_ptr<lru_node> _lru_last;
+	//lru_node * _lru_last;
+    //std::unique_ptr<lru_node> _lru_first;
 
     // Index of nodes from list above, allows fast random access to elements by lru_node#key
     std::unordered_map<std::string, std::reference_wrapper<lru_node>> _lru_index;

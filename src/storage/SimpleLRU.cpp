@@ -30,7 +30,6 @@ bool SimpleLRU::Put(const std::string & key, const std::string & value) {
 		
 		MoveToStart(node);
 	} else {
-		
 		if (!this->ReleaseSpace(node_size)) {
 			return false;
 		}
@@ -38,11 +37,10 @@ bool SimpleLRU::Put(const std::string & key, const std::string & value) {
 		lru_node * prev_first = nullptr;
 
 		if (_lru_last == nullptr) {
-			//_lru_last.reset(std::make_unique<lru_node>()); // Need to turn on c++14
-			_lru_last = std::move(std::unique_ptr<lru_node>(new lru_node));
+			_lru_last = std::make_unique<lru_node>();
 			_lru_first = _lru_last.get();
-		} else {	
-			_lru_first->next = std::move(std::unique_ptr<lru_node> (new lru_node));
+		} else {
+			_lru_first->next = std::make_unique<lru_node>();
 			prev_first = _lru_first;
 			_lru_first = _lru_first->next.get();
 		};
@@ -75,7 +73,6 @@ bool SimpleLRU::Set(const std::string &key, const std::string &value) {
 	auto it = _lru_index.find(key);
 
 	if (it != _lru_index.end()) {
-
 		size_t diff = value.size() - it->second.get().value.size();
 		if (diff > 0) {
 			if (!this->ReleaseSpace(diff)) {
@@ -96,8 +93,8 @@ bool SimpleLRU::Delete(const std::string &key) {
 	auto it = _lru_index.find(key);
 
 	if (it != _lru_index.end()) {
-
 		lru_node & node = it->second;
+		//auto & node = it->second;
 		_curr_size -= node.key.size() + node.value.size();
 
 		if (node.next) {
@@ -149,36 +146,33 @@ bool SimpleLRU::ReleaseSpace(const size_t size) {
 
 void SimpleLRU::MoveToStart(lru_node & node) {
 		
-		if (node.next == nullptr)
-			return;
-	
-		auto node_owner = node.prev;
-		if (node_owner == nullptr)
-			node_owner = _lru_first;
-	
-		node.next->prev = node.prev;
-		node.prev = _lru_first;
+	if (node.next == nullptr)
+		return;
 
-		node_owner->next.swap(node.next);
-		(node.next).swap(_lru_first->next);
-		
-		_lru_first = _lru_first->next.get();
+	auto node_owner = node.prev;
+	if (node_owner == nullptr)
+		node_owner = _lru_first;
 
-	return;
+	node.next->prev = node.prev;
+	node.prev = _lru_first;
+
+	node_owner->next.swap(node.next);
+	(node.next).swap(_lru_first->next);
+	
+	_lru_first = _lru_first->next.get();
 }
 
 void SimpleLRU::ClearCache() {
 
-	_lru_index.clear();
-	
+	///_lru_index.clear();
+	/*
 	while (_lru_last != nullptr){
 		std::unique_ptr<lru_node> freed = std::move(_lru_last);
 		_lru_last = std::move(freed -> next);
 	}
 	
 	_lru_last.reset();
-	
-	return;
+	*/
 }
 
 } // namespace Backend
