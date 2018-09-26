@@ -21,7 +21,16 @@ public:
 										_lru_last(nullptr){}
 
     ~SimpleLRU() {
-    	ClearCache();
+		/*
+		_lru_index.clear();
+		
+		while (_lru_last != nullptr){
+			std::unique_ptr<lru_node> freed = std::move(_lru_last);
+			_lru_last = std::move(freed -> next);
+		}
+		
+		_lru_last.reset();
+		*/
 	}
 
     // Implements Afina::Storage interface
@@ -66,8 +75,6 @@ private:
 	bool ReleaseSpace(const size_t size);
 	
 	void MoveToStart(lru_node & node);
-
-	void ClearCache();
 };
 
 } // namespace Backend

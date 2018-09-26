@@ -1,4 +1,4 @@
-// Kononov Sergey BD-21
+//Kononov Sergey BD-21
 
 #include <memory>
 #include "SimpleLRU.h"
@@ -73,10 +73,8 @@ bool SimpleLRU::Set(const std::string &key, const std::string &value) {
 
 	if (it != _lru_index.end()) {
 		size_t diff = value.size() - it->second.get().value.size();
-		if (diff > 0) {
-			if (!this->ReleaseSpace(diff)) {
-				return false;
-			}
+		if ((diff > 0) && !(this->ReleaseSpace(diff))) {
+			return false;
 		}
 		
 		it->second.get().value = value;
@@ -160,20 +158,6 @@ void SimpleLRU::MoveToStart(lru_node & node) {
 
 	node_owner->next.swap(node.next);
 	(node.next).swap(_lru_first);
-}
-
-void SimpleLRU::ClearCache() {
-
-	/*
-	_lru_index.clear();
-	
-	while (_lru_last != nullptr){
-		std::unique_ptr<lru_node> freed = std::move(_lru_last);
-		_lru_last = std::move(freed -> next);
-	}
-	
-	_lru_last.reset();
-	*/
 }
 
 } // namespace Backend
