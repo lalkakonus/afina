@@ -21,16 +21,14 @@ public:
 										_lru_last(nullptr){}
 
     ~SimpleLRU() {
-		/*
 		_lru_index.clear();
 		
-		while (_lru_last != nullptr){
-			std::unique_ptr<lru_node> freed = std::move(_lru_last);
-			_lru_last = std::move(freed -> next);
+		while (_lru_first != nullptr){
+			std::unique_ptr<lru_node> freed = std::move(_lru_first);
+			_lru_first = std::move(freed -> next);
 		}
 		
-		_lru_last.reset();
-		*/
+		_lru_first.reset();
 	}
 
     // Implements Afina::Storage interface
