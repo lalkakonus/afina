@@ -3,6 +3,9 @@
 
 #include <atomic>
 #include <thread>
+#include <vector>
+#include <mutex>
+#include <condition_variable>
 
 #include <afina/network/Server.h>
 
@@ -13,6 +16,8 @@ class logger;
 namespace Afina {
 namespace Network {
 namespace MTblocking {
+
+const int THREAD_COUNT = 5;
 
 /**
  * # Network resource manager implementation
@@ -31,6 +36,8 @@ public:
 
     // See Server.h
     void Join() override;
+	
+	void ProcessThread(int client_socket);
 
 protected:
     /**
@@ -39,7 +46,8 @@ protected:
     void OnRun();
 
 private:
-    // Logger instance
+    
+	// Logger instance
     std::shared_ptr<spdlog::logger> _logger;
 
     // Atomic flag to notify threads when it is time to stop. Note that
@@ -53,7 +61,39 @@ private:
     // Thread to run network on
     std::thread _thread;
 
-	std::set<std::thread> _threads;
+	ThreadPool _thread_pool;
+};
+
+class Worker {
+public:
+	Worker(ServerImpl * ptr);
+	~Worker();
+	
+	bool CheckActive() const;
+
+	void Start(int client_soket);	
+
+private:
+	void Process(ServerImpl * ptr);
+	
+	int _socket;
+	bool is_active, on_run;
+	std::thread thread; // on_run, is_acive initialize first
+	std::condition_variable cv;
+	mutable std::mutex active_mutex;
+};
+
+class ThreadPool {
+public:
+	ThreadPool(ServerImpl * ptr, int);
+
+	bool AddConnection(int client_socket);
+
+private:	
+	const unsigned int _max_count;
+	std::vector<std::shared_ptr<Worker>> _workers;
+	
+	std::shared_ptr<Worker> GetFreeWorker();
 };
 
 } // namespace MTblocking

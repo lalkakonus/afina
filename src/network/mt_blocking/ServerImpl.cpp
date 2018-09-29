@@ -28,7 +28,7 @@ namespace Network {
 namespace MTblocking {
 
 // See Server.h
-ServerImpl::ServerImpl(std::shared_ptr<Afina::Storage> ps, std::shared_ptr<Logging::Service> pl) : Server(ps, pl) {}
+ServerImpl::ServerImpl(std::shared_ptr<Afina::Storage> ps, std::shared_ptr<Logging::Service> pl) : Server(ps, pl), _thread_pool(this, THREAD_COUNT) {}
 
 // See Server.h
 ServerImpl::~ServerImpl() {}
@@ -89,75 +89,60 @@ void ServerImpl::Join() {
     close(_server_socket);
 }
 
-class Worker {
-	std::thread thread;
-	int _socket;
-	bool is_active, on_run;
-	std::conditional_variable cv;
-	std::mutex active_mutex;
-
-	void Process() {
-		while (on_run) {
-			std::unique_lock<std::mutex> lock(active_mutex);
-			cv.wait(lock, is_active);
-			ProcessConnection(soket);		
-			is_active = false;
-		}
+void Worker::Process(ServerImpl * ptr) {
+	while (on_run) {
+		std::unique_lock<std::mutex> lock(active_mutex);
+		cv.wait(lock, [&]{return is_active && !on_run;});
+		if (!on_run) break;
+		lock.unlock();
+		ptr->ProcessThread(_socket);		
+		lock.lock();
+		is_active = false;
 	}
+}
 
-public:
-	Worker(std::ref count): is_active(false), thread(Process, count) {};
-	
-	bool CheckActive() {
-		return is_active;
+Worker::Worker(ServerImpl * ptr): on_run(true), is_active(false), 
+								  thread(&Worker::Process, this, ptr) {};
+
+bool Worker::CheckActive() const{
+	std::lock_guard<std::mutex> lock(active_mutex);
+	return is_active;
+}
+
+void Worker::Start(int client_soket) {
+	std::unique_lock<std::mutex> lock(active_mutex);
+	is_active = true;
+	_socket = client_soket;
+	cv.notify_one();
+}
+
+Worker::~Worker() {
+	on_run = false;
+	cv.notify_one();
+	thread.join();
+}
+
+std::shared_ptr<Worker> ThreadPool::GetFreeWorker() {
+	for (auto& ptr: _workers) {
+		if (ptr->CheckActive())
+			return ptr;
 	}
+	return nullptr;
+}
 
-	void Start(int client_soket) {
-		std::lock_guard<std::mutex> lock(active_mutex);
-		is_active = true;
-		_soket = client_soket;
-		cv.notify_one();
-	}
+ThreadPool::ThreadPool(ServerImpl * ptr, int max_count = 1): _max_count(max_count) {
+	_workers.reserve(max_count);
+	for (int i = 0; i < _max_count; i++)
+		_workers.emplace_back(new Worker(ptr));
+}
 
-	~Worker {
-		std::lock_guard<std::mutex> (lock)
-		on_active = false;
-		thread.join();
-	}
-};
-
-class ThreadPool {
-	const unsigned int _max_count;
-	std::vector<shared_ptr<Worker>> _workers;
-	
-	std::shared_ptr<Worker> GetFreeWorker() {
-		for (auto& it: _workers) {
-			if (it->CheckActive())
-				return it;
-		}
-
-		return nullptr; // Not necessary
-	}
-
-public:
-
-	ThreadPool(int max_count = 1): _count(0), _max_count(max_count): {
-		// vector reserve ??
-		for (int i = 0; i < _max_count; i++)
-			_workers.emplace_back(new Worker(std::ref(count)));
-	}
-
-	bool AddConnection(int client_socket) {
-		if (GetCount() >= _max_count) {
-			return false;
-		} else {
-			std::lock_guard<std::mutex> tmp_lock(_count_mutex);
-			_count++;
-			GetFreeWorker()->Start(client_socet, _count);	
-		}
+bool ThreadPool::AddConnection(int client_socket) {
+	if (auto it=GetFreeWorker()) {
+		it->Start(client_socket);	
 		return true;
 	}
-};
+	return false;
+}
 
 // See Server.h
 void ServerImpl::OnRun() {
@@ -166,12 +151,7 @@ void ServerImpl::OnRun() {
     // - command_to_execute: last command parsed out of stream
     // - arg_remains: how many bytes to read from stream to get command argument
     // - argument_for_command: buffer stores argument
-    std::size_t arg_remains;
-    Protocol::Parser parser;
-    std::string argument_for_command;
-    std::unique_ptr<Execute::Command> command_to_execute;
-    std::vector<std::thread> threads;
-	
+
 	while (running.load()) {
         _logger->debug("waiting for connection...");
 
@@ -205,19 +185,26 @@ void ServerImpl::OnRun() {
         }
 
         // TODO: Start new thread and process data from/to connection
-		threads.emplace_back(&ServerImpl::ProcessThread, client_socket);
-    }
+    	if (!_thread_pool.AddConnection(client_socket)) {
+			close(client_socket);
+		}
+	}
 
     // Cleanup on exit...
     _logger->warn("Network stopped");
 }
 
-void ServerImpl::ProcessThread(int client_socet) {
+void ServerImpl::ProcessThread(int client_socket) {
 	
 	// Process new connection:
 	// - read commands until socket alive
 	// - execute each command
 	// - send response
+    std::size_t arg_remains;
+    Protocol::Parser parser;
+    std::string argument_for_command;
+    std::unique_ptr<Execute::Command> command_to_execute;
+	
 	try {
 		int readed_bytes = -1;
 		char client_buffer[4096];
@@ -289,7 +276,7 @@ void ServerImpl::ProcessThread(int client_socet) {
 					argument_for_command.resize(0);
 					parser.Reset();
 				}
-			} // while (readed_bytes)
+			} 
 		}
 
 		if (readed_bytes == 0) {
@@ -304,17 +291,6 @@ void ServerImpl::ProcessThread(int client_socet) {
 
 	// We are done with this connection
 	close(client_socket);
-
-	// Prepare for the next command: just in case if connection 
-	// Was closed in the middle of executing something
-	command_to_execute.reset();
-	argument_for_command.resize(0);
-	parser.Reset();
-	
-
-	//std::thread:id thread_id = std::this_thread::get_id();
-
-	return 0;
 }
 
 } // namespace MTblocking
