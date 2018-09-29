@@ -51,7 +51,7 @@ public:
     }
 
 private:
-	std::mutex mutex;
+	mutable std::mutex mutex;
 };
 
 } // namespace Backend

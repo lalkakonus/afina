@@ -89,6 +89,19 @@ void ServerImpl::Join() {
     close(_server_socket);
 }
 
+Worker::Worker(ServerImpl * ptr): on_run(true), is_active(false), thread(&Worker::Process, this, ptr) {};
+
+Worker::~Worker() {
+	on_run = false;
+	cv.notify_one();
+	thread.join();
+}
+
+bool Worker::CheckActive() const{
+	std::lock_guard<std::mutex> lock(active_mutex);
+	return is_active;
+}
+
 void Worker::Process(ServerImpl * ptr) {
 	while (on_run) {
 		std::unique_lock<std::mutex> lock(active_mutex);
@@ -101,14 +114,6 @@ void Worker::Process(ServerImpl * ptr) {
 	}
 }
 
-Worker::Worker(ServerImpl * ptr): on_run(true), is_active(false), 
-								  thread(&Worker::Process, this, ptr) {};
-
-bool Worker::CheckActive() const{
-	std::lock_guard<std::mutex> lock(active_mutex);
-	return is_active;
-}
-
 void Worker::Start(int client_soket) {
 	std::unique_lock<std::mutex> lock(active_mutex);
 	is_active = true;
@@ -116,10 +121,10 @@ void Worker::Start(int client_soket) {
 	cv.notify_one();
 }
 
-Worker::~Worker() {
-	on_run = false;
-	cv.notify_one();
-	thread.join();
+ThreadPool::ThreadPool(ServerImpl * ptr, int max_count = 1): _max_count(max_count) {
+	_workers.reserve(max_count);
+	for (int i = 0; i < _max_count; i++)
+		_workers.emplace_back(new Worker(ptr));
 }
 
 std::shared_ptr<Worker> ThreadPool::GetFreeWorker() {
@@ -128,12 +133,6 @@ std::shared_ptr<Worker> ThreadPool::GetFreeWorker() {
 			return ptr;
 	}
 	return nullptr;
-}
-
-ThreadPool::ThreadPool(ServerImpl * ptr, int max_count = 1): _max_count(max_count) {
-	_workers.reserve(max_count);
-	for (int i = 0; i < _max_count; i++)
-		_workers.emplace_back(new Worker(ptr));
 }
 
 bool ThreadPool::AddConnection(int client_socket) {

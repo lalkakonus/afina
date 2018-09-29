@@ -19,6 +19,40 @@ namespace MTblocking {
 
 const int THREAD_COUNT = 5;
 
+class ServerImpl;
+
+class Worker {
+public:
+	Worker(ServerImpl * ptr);
+	~Worker();
+	
+	bool CheckActive() const;
+
+	void Start(int client_soket);	
+
+private:
+	void Process(ServerImpl * ptr);
+	
+	int _socket;
+	bool is_active, on_run;
+	std::thread thread; // on_run, is_acive initialize first
+	std::condition_variable cv;
+	mutable std::mutex active_mutex;
+};
+
+class ThreadPool {
+public:
+	ThreadPool(ServerImpl * ptr, int);
+
+	bool AddConnection(int client_socket);
+
+private:	
+	std::shared_ptr<Worker> GetFreeWorker();
+
+	const unsigned int _max_count;
+	std::vector<std::shared_ptr<Worker>> _workers;
+};
+
 /**
  * # Network resource manager implementation
  * Server that is spawning a separate thread for each connection
@@ -62,38 +96,6 @@ private:
     std::thread _thread;
 
 	ThreadPool _thread_pool;
-};
-
-class Worker {
-public:
-	Worker(ServerImpl * ptr);
-	~Worker();
-	
-	bool CheckActive() const;
-
-	void Start(int client_soket);	
-
-private:
-	void Process(ServerImpl * ptr);
-	
-	int _socket;
-	bool is_active, on_run;
-	std::thread thread; // on_run, is_acive initialize first
-	std::condition_variable cv;
-	mutable std::mutex active_mutex;
-};
-
-class ThreadPool {
-public:
-	ThreadPool(ServerImpl * ptr, int);
-
-	bool AddConnection(int client_socket);
-
-private:	
-	const unsigned int _max_count;
-	std::vector<std::shared_ptr<Worker>> _workers;
-	
-	std::shared_ptr<Worker> GetFreeWorker();
 };
 
 } // namespace MTblocking
