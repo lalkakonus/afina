@@ -105,8 +105,10 @@ bool Worker::CheckActive() const{
 void Worker::Process(ServerImpl * ptr) {
 	while (on_run) {
 		std::unique_lock<std::mutex> lock(active_mutex);
-		cv.wait(lock, [&]{return is_active && !on_run;});
-		if (!on_run) break;
+		cv.wait(lock, [&]{return is_active || !on_run;});
+		if (!on_run) {
+			break;
+		}
 		lock.unlock();
 		ptr->ProcessThread(_socket);		
 		lock.lock();
