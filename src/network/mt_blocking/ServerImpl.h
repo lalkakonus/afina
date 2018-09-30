@@ -23,7 +23,7 @@ class ServerImpl;
 
 class Worker {
 public:
-	Worker(ServerImpl * ptr);
+	Worker(std::shared_ptr<Afina::Logging::Service>, ServerImpl * ptr, int);
 	~Worker();
 
 	bool CheckActive() const;
@@ -33,16 +33,18 @@ public:
 private:
 	void Process(ServerImpl * ptr);
 
-	int _socket;
+	int _socket, _num;
 	bool is_active, on_run;
-	std::thread thread; // on_run, is_acive initialize first
 	std::condition_variable cv;
 	mutable std::mutex active_mutex;
+	std::thread thread; // on_run, is_acive initialize first
+	mutable std::shared_ptr<spdlog::logger> _logger;
+    std::shared_ptr<Afina::Logging::Service> pLogging;
 };
 
 class ThreadPool {
 public:
-	ThreadPool(ServerImpl * ptr, int);
+	ThreadPool(std::shared_ptr<Afina::Logging::Service>, ServerImpl * ptr, int);
 
 	bool AddConnection(int client_socket);
 
@@ -51,6 +53,8 @@ private:
 
 	const unsigned int _max_count;
 	std::vector<std::shared_ptr<Worker>> _workers;
+	std::shared_ptr<spdlog::logger> _logger;
+    std::shared_ptr<Afina::Logging::Service> pLogging;
 };
 
 /**
@@ -71,7 +75,7 @@ public:
 	// See Server.h
 	void Join() override;
 
-	void ProcessThread(int client_socket);
+	void ProcessThread(int client_socket, int num);
 
 protected:
 	/**

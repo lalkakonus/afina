@@ -28,7 +28,9 @@ namespace Network {
 namespace MTblocking {
 
 // See Server.h
-ServerImpl::ServerImpl(std::shared_ptr<Afina::Storage> ps, std::shared_ptr<Logging::Service> pl) : Server(ps, pl), _thread_pool(this, THREAD_COUNT) {}
+ServerImpl::ServerImpl(std::shared_ptr<Afina::Storage> ps, 
+					   std::shared_ptr<Logging::Service> pl) : Server(ps, pl), 
+					   										   _thread_pool(pl, this, THREAD_COUNT) {}
 
 // See Server.h
 ServerImpl::~ServerImpl() {}
@@ -89,7 +91,10 @@ void ServerImpl::Join() {
     close(_server_socket);
 }
 
-Worker::Worker(ServerImpl * ptr): on_run(true), is_active(false), thread(&Worker::Process, this, ptr) {};
+Worker::Worker(std::shared_ptr<Afina::Logging::Service> pl,
+			   ServerImpl * ptr, int num): _num(num), on_run(true), is_active(false),
+			   							   thread(&Worker::Process, this, ptr), cv(),
+										   active_mutex(), pLogging(pl){};
 
 Worker::~Worker() {
 	on_run = false;
@@ -99,6 +104,8 @@ Worker::~Worker() {
 
 bool Worker::CheckActive() const{
 	std::lock_guard<std::mutex> lock(active_mutex);
+   	_logger = pLogging->select("root");
+    _logger->debug("Check worker #{}", _num); //, (int)std::this_thread::get_id());
 	return is_active;
 }
 
@@ -110,7 +117,9 @@ void Worker::Process(ServerImpl * ptr) {
 			break;
 		}
 		lock.unlock();
-		ptr->ProcessThread(_socket);		
+		_logger = pLogging->select("root");
+		_logger->debug("Worker #{} start connection pendind", _num); //, (int)std::this_thread::get_id());
+		ptr->ProcessThread(_socket, _num);		
 		lock.lock();
 		is_active = false;
 	}
@@ -123,15 +132,21 @@ void Worker::Start(int client_soket) {
 	cv.notify_one();
 }
 
-ThreadPool::ThreadPool(ServerImpl * ptr, int max_count = 1): _max_count(max_count) {
+ThreadPool::ThreadPool(std::shared_ptr<Afina::Logging::Service> pl, 
+					   ServerImpl * ptr, int max_count = 1): _max_count(max_count), pLogging(pl) {
+    
+	
+    //_logger->info("Start thread pool");
+	
 	_workers.reserve(max_count);
 	for (int i = 0; i < _max_count; i++)
-		_workers.emplace_back(new Worker(ptr));
+		_workers.emplace_back(new Worker(pl, ptr, i));
+    
 }
 
 std::shared_ptr<Worker> ThreadPool::GetFreeWorker() {
 	for (auto& ptr: _workers) {
-		if (ptr->CheckActive())
+		if (!ptr->CheckActive())
 			return ptr;
 	}
 	return nullptr;
@@ -142,6 +157,9 @@ bool ThreadPool::AddConnection(int client_socket) {
 		it->Start(client_socket);	
 		return true;
 	}
+   	_logger = pLogging->select("root");
+    _logger->warn("No free threads");
+
 	return false;
 }
 
@@ -174,7 +192,8 @@ void ServerImpl::OnRun() {
                 host = hbuf;
                 port = sbuf;
             }
-            _logger->debug("Accepted connection on descriptor {} (host={}, port={})\n", client_socket, host, port);
+            _logger->debug("Accepted connection on descriptor {} (host={}, port={})\n",
+							client_socket, host, port);
         }
 
         // Configure read timeout
@@ -187,6 +206,7 @@ void ServerImpl::OnRun() {
 
         // TODO: Start new thread and process data from/to connection
     	if (!_thread_pool.AddConnection(client_socket)) {
+            _logger->debug("connection on descriptor {} closed, thread limit\n", client_socket);
 			close(client_socket);
 		}
 	}
@@ -195,7 +215,7 @@ void ServerImpl::OnRun() {
     _logger->warn("Network stopped");
 }
 
-void ServerImpl::ProcessThread(int client_socket) {
+void ServerImpl::ProcessThread(int client_socket, int num) {
 	
 	// Process new connection:
 	// - read commands until socket alive
@@ -210,7 +230,7 @@ void ServerImpl::ProcessThread(int client_socket) {
 		int readed_bytes = -1;
 		char client_buffer[4096];
 		while ((readed_bytes = read(client_socket, client_buffer, sizeof(client_buffer))) > 0) {
-			_logger->debug("Got {} bytes from socket", readed_bytes);
+			_logger->debug("Worker #{} : Got {} bytes from socket", num, readed_bytes);
 
 			// Single block of data readed from the socket could 
 			// trigger inside actions a multiple times,
@@ -219,14 +239,14 @@ void ServerImpl::ProcessThread(int client_socket) {
 			// - read#1: [<command1 end> <argument> <command2> 
 			// <argument for command 2> <command3> ... ]
 			while (readed_bytes > 0) {
-				_logger->debug("Process {} bytes", readed_bytes);
+				_logger->debug("Worker #{} : Process {} bytes", num, readed_bytes);
 				// There is no command yet
 				if (!command_to_execute) {
 					std::size_t parsed = 0;
 					if (parser.Parse(client_buffer, readed_bytes, parsed)) {
 						// There is no command to be launched, continue to parse input stream
 						// Here we are, current chunk finished some command, process it
-						_logger->debug("Found new command: {} in {} bytes", 
+						_logger->debug("Worker #{} : Found new command: {} in {} bytes", num, 
 										parser.Name(), parsed);
 						command_to_execute = parser.Build(arg_remains);
 						if (arg_remains > 0) {
@@ -249,7 +269,8 @@ void ServerImpl::ProcessThread(int client_socket) {
 
 				// There is command, but we still wait for argument to arrive...
 				if (command_to_execute && arg_remains > 0) {
-					_logger->debug("Fill argument: {} bytes of {}", readed_bytes, arg_remains);
+					_logger->debug("Worker #{} : Fill argument: {} bytes of {}",
+									num, readed_bytes, arg_remains);
 					// There is some parsed command, and now we are reading argument
 					std::size_t to_read = std::min(arg_remains, std::size_t(readed_bytes));
 					argument_for_command.append(client_buffer, to_read);
@@ -262,7 +283,7 @@ void ServerImpl::ProcessThread(int client_socket) {
 
 				// Thre is command & argument - RUN!
 				if (command_to_execute && arg_remains == 0) {
-					_logger->debug("Start command execution");
+					_logger->debug("Worker #{} : Start command execution", num);
 
 					std::string result;
 					command_to_execute->Execute(*pStorage, argument_for_command, result);
@@ -281,13 +302,13 @@ void ServerImpl::ProcessThread(int client_socket) {
 		}
 
 		if (readed_bytes == 0) {
-			_logger->debug("Connection closed");
+			_logger->debug("worker #{} : Connection closed", num);
 		} else {
 			throw std::runtime_error(std::string(strerror(errno)));
 		}
 	} catch (std::runtime_error &ex) {
-		_logger->error("Failed to process connection on descriptor {}: {}",
-					   client_socket, ex.what());
+		_logger->error("Worker #{} : Failed to process connection on descriptor {}: {}",
+						num, client_socket, ex.what());
 	}
 
 	// We are done with this connection
