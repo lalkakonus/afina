@@ -27,8 +27,6 @@ public:
 			std::unique_ptr<lru_node> freed = std::move(_lru_first);
 			_lru_first = std::move(freed -> next);
 		}
-		
-		_lru_first.reset();
 	}
 
     // Implements Afina::Storage interface

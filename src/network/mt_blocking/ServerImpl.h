@@ -1,6 +1,7 @@
 #ifndef AFINA_NETWORK_MT_BLOCKING_SERVER_H
 #define AFINA_NETWORK_MT_BLOCKING_SERVER_H
 
+// #include "ThreadPool.h"
 #include <atomic>
 #include <thread>
 #include <vector>
@@ -17,45 +18,45 @@ namespace Afina {
 namespace Network {
 namespace MTblocking {
 
-const int THREAD_COUNT = 5;
+const unsigned int THREAD_COUNT = 5;
 
 class ServerImpl;
 
 class Worker {
 public:
-	Worker(std::shared_ptr<Afina::Logging::Service>, ServerImpl * ptr, int);
+	Worker(std::shared_ptr<Afina::Logging::Service>, ServerImpl * ptr, unsigned int id);
 	~Worker();
 
 	bool CheckActive() const;
 
-	void Start(int client_soket);	
+	void Start(int clientSoket);	
 
 private:
 	void Process(ServerImpl * ptr);
 
-	int _socket, _num;
-	bool is_active, on_run;
+	int _socket;
+	unsigned int _id;
+	bool _isActive, _onRun;
 	std::condition_variable cv;
-	mutable std::mutex active_mutex;
-	std::thread thread; // on_run, is_acive initialize first
-	mutable std::shared_ptr<spdlog::logger> _logger;
+	mutable std::mutex mutex;
+	std::thread thread; // on_run, is_acive - initialize first
     std::shared_ptr<Afina::Logging::Service> pLogging;
 };
 
 class ThreadPool {
 public:
-	ThreadPool(std::shared_ptr<Afina::Logging::Service>, ServerImpl * ptr, int);
+	ThreadPool(std::shared_ptr<Afina::Logging::Service>, ServerImpl * ptr, unsigned int maxCount);
 
-	bool AddConnection(int client_socket);
+	bool AddConnection(int clientSocket);
 
 private:	
 	std::shared_ptr<Worker> GetFreeWorker();
 
-	const unsigned int _max_count;
+	const unsigned int _maxCount;
 	std::vector<std::shared_ptr<Worker>> _workers;
-	std::shared_ptr<spdlog::logger> _logger;
     std::shared_ptr<Afina::Logging::Service> pLogging;
 };
+
 
 /**
  * # Network resource manager implementation
@@ -75,7 +76,7 @@ public:
 	// See Server.h
 	void Join() override;
 
-	void ProcessThread(int client_socket, int num);
+	void ProcessThread(int client_socket, int thread_num);
 
 protected:
 	/**

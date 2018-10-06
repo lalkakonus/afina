@@ -1,4 +1,5 @@
 #include "ServerImpl.h"
+//#include "ThreadPool.h"
 
 #include <cassert>
 #include <cstring>
@@ -89,78 +90,6 @@ void ServerImpl::Join() {
     assert(_thread.joinable());
     _thread.join();
     close(_server_socket);
-}
-
-Worker::Worker(std::shared_ptr<Afina::Logging::Service> pl,
-			   ServerImpl * ptr, int num): _num(num), on_run(true), is_active(false),
-			   							   thread(&Worker::Process, this, ptr), cv(),
-										   active_mutex(), pLogging(pl){};
-
-Worker::~Worker() {
-	on_run = false;
-	cv.notify_one();
-	thread.join();
-}
-
-bool Worker::CheckActive() const{
-	std::lock_guard<std::mutex> lock(active_mutex);
-   	_logger = pLogging->select("root");
-    _logger->debug("Check worker #{}", _num); //, (int)std::this_thread::get_id());
-	return is_active;
-}
-
-void Worker::Process(ServerImpl * ptr) {
-	while (on_run) {
-		std::unique_lock<std::mutex> lock(active_mutex);
-		cv.wait(lock, [&]{return is_active || !on_run;});
-		if (!on_run) {
-			break;
-		}
-		lock.unlock();
-		_logger = pLogging->select("root");
-		_logger->debug("Worker #{} start connection pendind", _num); //, (int)std::this_thread::get_id());
-		ptr->ProcessThread(_socket, _num);		
-		lock.lock();
-		is_active = false;
-	}
-}
-
-void Worker::Start(int client_soket) {
-	std::unique_lock<std::mutex> lock(active_mutex);
-	is_active = true;
-	_socket = client_soket;
-	cv.notify_one();
-}
-
-ThreadPool::ThreadPool(std::shared_ptr<Afina::Logging::Service> pl, 
-					   ServerImpl * ptr, int max_count = 1): _max_count(max_count), pLogging(pl) {
-    
-	
-    //_logger->info("Start thread pool");
-	
-	_workers.reserve(max_count);
-	for (int i = 0; i < _max_count; i++)
-		_workers.emplace_back(new Worker(pl, ptr, i));
-    
-}
-
-std::shared_ptr<Worker> ThreadPool::GetFreeWorker() {
-	for (auto& ptr: _workers) {
-		if (!ptr->CheckActive())
-			return ptr;
-	}
-	return nullptr;
-}
-
-bool ThreadPool::AddConnection(int client_socket) {
-	if (auto it=GetFreeWorker()) {
-		it->Start(client_socket);	
-		return true;
-	}
-   	_logger = pLogging->select("root");
-    _logger->warn("No free threads");
-
-	return false;
 }
 
 // See Server.h
@@ -313,6 +242,79 @@ void ServerImpl::ProcessThread(int client_socket, int num) {
 
 	// We are done with this connection
 	close(client_socket);
+}
+
+Worker::Worker(std::shared_ptr<Afina::Logging::Service> pl,
+			   ServerImpl * ptr, unsigned int id): _id(id), 
+			   							  		   _onRun(true), 
+												   _isActive(false),
+												   thread(&Worker::Process, this, ptr), 
+												   pLogging(pl) {};
+
+Worker::~Worker() {
+	_onRun = false;
+	cv.notify_one();
+	thread.join();
+}
+
+bool Worker::CheckActive() const{
+	std::lock_guard<std::mutex> lock(mutex);
+   	auto _logger = pLogging->select("root");
+    _logger->debug("Check worker #{}", _id);
+	return _isActive;
+}
+
+void Worker::Process(ServerImpl * ptr) {
+	while (_onRun) {
+		std::unique_lock<std::mutex> lock(mutex);
+		cv.wait(lock, [&]{return _isActive || !_onRun;});
+		if (!_onRun) {
+			return;
+		}
+		lock.unlock();
+		auto _logger = pLogging->select("root");
+		_logger->debug("Worker #{} start connection pendind", _id);
+		ptr->ProcessThread(_socket, _id);		
+		lock.lock();
+		_isActive = false;
+	}
+}
+
+void Worker::Start(int clientSoket) {
+	std::unique_lock<std::mutex> lock(mutex);
+	_isActive = true;
+	_socket = clientSoket;
+	cv.notify_one();
+}
+
+ThreadPool::ThreadPool(std::shared_ptr<Afina::Logging::Service> pl, 
+					   ServerImpl * ptr,
+					   unsigned int maxCount = THREAD_COUNT): _maxCount(maxCount), 
+					   										  pLogging(pl) {
+	_workers.reserve(_maxCount);
+	for (int i = 0; i < _maxCount; i++) {
+		_workers.emplace_back(new Worker(pl, ptr, i));
+	}
+}
+
+std::shared_ptr<Worker> ThreadPool::GetFreeWorker() {
+	for (auto& ptr: _workers) {
+		if (!ptr->CheckActive())
+			return ptr;
+	}
+	return nullptr;
+}
+
+bool ThreadPool::AddConnection(int clientSocket) {
+	auto it=GetFreeWorker();
+	if (it) {
+		it->Start(clientSocket);	
+		return true;
+	}
+   	auto _logger = pLogging->select("root");
+    _logger->warn("No free threads");
+
+	return false;
 }
 
 } // namespace MTblocking

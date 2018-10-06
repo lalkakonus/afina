@@ -16,7 +16,7 @@ bool SimpleLRU::Put(const std::string & key, const std::string & value) {
 	if (it != _lru_index.end()) {
 		lru_node & node = it->second;
 		//auto & node = it->second; // Not working
-		size_t diff = value.size() - node.value.size();
+		int diff = value.size() - node.value.size();
 
 		if (diff > 0) {
 			if (!this->ReleaseSpace(diff)) {
@@ -24,7 +24,7 @@ bool SimpleLRU::Put(const std::string & key, const std::string & value) {
 			}
 		}
 
-		_curr_size += value.size() - node.value.size();
+		_curr_size += diff;
 		node.value = value;
 		
 		MoveToStart(node);
