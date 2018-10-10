@@ -72,7 +72,7 @@ bool SimpleLRU::Set(const std::string &key, const std::string &value) {
 	auto it = _lru_index.find(key);
 
 	if (it != _lru_index.end()) {
-		size_t diff = value.size() - it->second.get().value.size();
+		int diff = value.size() - it->second.get().value.size();
 		if ((diff > 0) && !(this->ReleaseSpace(diff))) {
 			return false;
 		}

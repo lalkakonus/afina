@@ -100,7 +100,8 @@ private:
 	// Thread to run network on
 	std::thread _thread;
 
-	ThreadPool _thread_pool;
+	std::shared_ptr<Logging::Service> _pl;
+	// ThreadPool _thread_pool;
 };
 
 } // namespace MTblocking

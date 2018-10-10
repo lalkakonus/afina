@@ -30,8 +30,8 @@ namespace MTblocking {
 
 // See Server.h
 ServerImpl::ServerImpl(std::shared_ptr<Afina::Storage> ps, 
-					   std::shared_ptr<Logging::Service> pl) : Server(ps, pl), 
-					   										   _thread_pool(pl, this, THREAD_COUNT) {}
+					   std::shared_ptr<Logging::Service> pl) : Server(ps, pl),
+					   										   _pl(pl) {}
 
 // See Server.h
 ServerImpl::~ServerImpl() {}
@@ -100,6 +100,9 @@ void ServerImpl::OnRun() {
     // - arg_remains: how many bytes to read from stream to get command argument
     // - argument_for_command: buffer stores argument
 
+
+	auto thread_pool = std::make_unique<ThreadPool>(_pl, this, THREAD_COUNT);
+
 	while (running.load()) {
         _logger->debug("waiting for connection...");
 
@@ -134,7 +137,7 @@ void ServerImpl::OnRun() {
         }
 
         // TODO: Start new thread and process data from/to connection
-    	if (!_thread_pool.AddConnection(client_socket)) {
+    	if (!thread_pool->AddConnection(client_socket)) {
             _logger->debug("connection on descriptor {} closed, thread limit\n", client_socket);
 			close(client_socket);
 		}
@@ -252,28 +255,33 @@ Worker::Worker(std::shared_ptr<Afina::Logging::Service> pl,
 												   pLogging(pl) {};
 
 Worker::~Worker() {
+	std::unique_lock<std::mutex> on_run_lock(mutex);
 	_onRun = false;
+	on_run_lock.unlock();
 	cv.notify_one();
 	thread.join();
 }
 
 bool Worker::CheckActive() const{
-	std::lock_guard<std::mutex> lock(mutex);
-   	auto _logger = pLogging->select("root");
-    _logger->debug("Check worker #{}", _id);
-	return _isActive;
+	std::unique_lock<std::mutex> lock(mutex);
+	bool result = _isActive;
+   	lock.unlock();
+	//auto _logger = pLogging->select("root");
+    //_logger->debug("Check worker #{}", _id);
+	return result;
 }
 
 void Worker::Process(ServerImpl * ptr) {
+
+	std::unique_lock<std::mutex> lock(mutex);
 	while (_onRun) {
-		std::unique_lock<std::mutex> lock(mutex);
 		cv.wait(lock, [&]{return _isActive || !_onRun;});
 		if (!_onRun) {
 			return;
 		}
 		lock.unlock();
-		auto _logger = pLogging->select("root");
-		_logger->debug("Worker #{} start connection pendind", _id);
+		// auto _logger = pLogging->select("root");
+		// _logger->debug("Worker #{} start connection pendind", _id);
 		ptr->ProcessThread(_socket, _id);		
 		lock.lock();
 		_isActive = false;
