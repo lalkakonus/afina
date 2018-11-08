@@ -1,11 +1,11 @@
 #ifndef AFINA_STORAGE_SIMPLE_LRU_H
 #define AFINA_STORAGE_SIMPLE_LRU_H
 
-#include <unordered_map>
+#include <map>
 #include <memory>
 #include <mutex>
 #include <string>
-
+#include <functional>
 #include <afina/Storage.h>
 
 namespace Afina {
@@ -15,6 +15,13 @@ namespace Backend {
  * # Map based implementation
  * That is NOT thread safe implementaiton!!
  */
+struct key_comp {
+	bool operator()(std::reference_wrapper<const std::string> a,
+					std::reference_wrapper<const std::string> b) const {
+		return a.get() < b.get();
+	}
+};
+
 class SimpleLRU : public Afina::Storage {
 public:
     SimpleLRU(size_t max_size = 1024) : _max_size(max_size), _curr_size(0), _lru_first(nullptr),
@@ -66,7 +73,10 @@ private:
 	lru_node * _lru_last;
 
     // Index of nodes from list above, allows fast random access to elements by lru_node#key
-    std::unordered_map<std::string, std::reference_wrapper<lru_node>> _lru_index;
+	std::map<std::reference_wrapper<const std::string>,
+			 std::reference_wrapper<lru_node>,
+			 key_comp> _lru_index;
+	// std::map<std::string, std::reference_wrapper<lru_node>> _lru_index;
 
 	bool ReleaseSpace(const size_t size);
 	

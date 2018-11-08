@@ -4,7 +4,8 @@
 // #include "ThreadPool.h"
 #include <atomic>
 #include <thread>
-#include <vector>
+#include <list>
+#include <map>
 #include <mutex>
 #include <condition_variable>
 
@@ -21,42 +22,6 @@ namespace MTblocking {
 const unsigned int THREAD_COUNT = 5;
 
 class ServerImpl;
-
-class Worker {
-public:
-	Worker(std::shared_ptr<Afina::Logging::Service>, ServerImpl * ptr, unsigned int id);
-	~Worker();
-
-	bool CheckActive() const;
-
-	void Start(int clientSoket);	
-
-private:
-	void Process(ServerImpl * ptr);
-
-	int _socket;
-	unsigned int _id;
-	bool _isActive, _onRun;
-	std::condition_variable cv;
-	mutable std::mutex mutex;
-	std::thread thread; // on_run, is_acive - initialize first
-    std::shared_ptr<Afina::Logging::Service> pLogging;
-};
-
-class ThreadPool {
-public:
-	ThreadPool(std::shared_ptr<Afina::Logging::Service>, ServerImpl * ptr, unsigned int maxCount);
-
-	bool AddConnection(int clientSocket);
-
-private:	
-	std::shared_ptr<Worker> GetFreeWorker();
-
-	const unsigned int _maxCount;
-	std::vector<std::shared_ptr<Worker>> _workers;
-    std::shared_ptr<Afina::Logging::Service> pLogging;
-};
-
 
 /**
  * # Network resource manager implementation
@@ -76,7 +41,7 @@ public:
 	// See Server.h
 	void Join() override;
 
-	void ProcessThread(int client_socket, int thread_num);
+	void ProcessThread(int client_socket);
 
 protected:
 	/**
@@ -99,9 +64,11 @@ private:
 
 	// Thread to run network on
 	std::thread _thread;
-
-	std::shared_ptr<Logging::Service> _pl;
-	// ThreadPool _thread_pool;
+	std::list<std::thread> thread_list;
+	std::map<int, std::thread> thread_map;
+	std::condition_variable cv;
+	std::mutex mutex;
+	unsigned int cnt;
 };
 
 } // namespace MTblocking

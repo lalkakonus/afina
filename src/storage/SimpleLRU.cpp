@@ -48,9 +48,10 @@ bool SimpleLRU::Put(const std::string & key, const std::string & value) {
 		_lru_first->prev = nullptr;
 		_lru_first->key = key;
 		_lru_first->value = value;	
-	
+
 		_curr_size += node_size;
-		_lru_index.emplace(key, *_lru_first);
+		_lru_index.emplace(std::reference_wrapper<const std::string> (_lru_first->key),
+						   *_lru_first);
 	};
 	
 	return true;
