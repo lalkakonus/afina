@@ -76,7 +76,6 @@ private:
 	std::map<std::reference_wrapper<const std::string>,
 			 std::reference_wrapper<lru_node>,
 			 key_comp> _lru_index;
-	// std::map<std::string, std::reference_wrapper<lru_node>> _lru_index;
 
 	bool ReleaseSpace(const size_t size);
 	

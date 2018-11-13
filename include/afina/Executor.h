@@ -8,6 +8,8 @@
 #include <queue>
 #include <string>
 #include <thread>
+#include <chrono>
+#include <atomic>
 
 namespace Afina {
 
@@ -27,7 +29,7 @@ class Executor {
         kStopped
     };
 
-    Executor(std::string name, int size);
+    Executor(std::string name, int size, int alpha_size, int betta_size, max_size);
     ~Executor();
 
     /**
@@ -45,20 +47,7 @@ class Executor {
      * That function doesn't wait for function result. Function could always be written in a way to notify caller about
      * execution finished by itself
      */
-    template <typename F, typename... Types> bool Execute(F &&func, Types... args) {
-        // Prepare "task"
-        auto exec = std::bind(std::forward<F>(func), std::forward<Types>(args)...);
-
-        std::unique_lock<std::mutex> lock(this->mutex);
-        if (state != State::kRun) {
-            return false;
-        }
-
-        // Enqueue new task
-        tasks.push_back(exec);
-        empty_condition.notify_one();
-        return true;
-    }
+    template <typename F, typename... Types> bool Execute(F &&func, Types... args);
 
 private:
     // No copy/move/assign allowed
@@ -70,7 +59,8 @@ private:
     /**
      * Main function that all pool threads are running. It polls internal task queue and execute tasks
      */
-    friend void perform(Executor *executor);
+    // Why not reference ??
+	friend void perform(Executor *executor, std::function<void ()> func = []{});
 
     /**
      * Mutex to protect state below from concurrent modification
@@ -86,16 +76,21 @@ private:
      * Vector of actual threads that perorm execution
      */
     std::vector<std::thread> threads;
-
+	int free_threads_cnt;
+	std::chrono::seconds idle_time(10);
     /**
      * Task queue
      */
     std::deque<std::function<void()>> tasks;
+	const int MAX_QUEUE_SIZE;
 
+	std::function<void()> get_function();
     /**
      * Flag to stop bg threads
      */
     State state;
+
+	const int MIN_SIZE, MAX_SIZE;
 };
 
 } // namespace Afina
