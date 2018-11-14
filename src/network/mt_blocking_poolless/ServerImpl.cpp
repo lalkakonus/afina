@@ -1,4 +1,5 @@
 #include "ServerImpl.h"
+//#include "ThreadPool.h"
 
 #include <cassert>
 #include <cstring>
@@ -30,9 +31,14 @@ namespace MTblocking {
 // See Server.h
 ServerImpl::ServerImpl(std::shared_ptr<Afina::Storage> ps, 
 					   std::shared_ptr<Logging::Service> pl) : Server(ps, pl),
-					   										   thread_pool() {}
+					   										   cnt(0) {}
 
-ServerImpl::~ServerImpl(){};
+// See Server.h
+//ServerImpl::~ServerImpl() {
+	//for (auto & x: thread_list) {
+	//	x.join();
+	//}
+//}
 
 // See Server.h
 void ServerImpl::Start(uint16_t port, uint32_t n_accept, uint32_t n_workers) {
@@ -85,15 +91,18 @@ void ServerImpl::Stop() {
 
 // See Server.h
 void ServerImpl::Join() {
-	thread_pool.Stop(true);
+	_logger->debug("Count : {}", cnt);
+
+	while (cnt) {
+		std::unique_lock<std::mutex> lock(mutex);
+		cv.wait(lock);
+	}
+
     assert(_thread.joinable());
     _thread.join();
     close(_server_socket);
 }
 
-void foo() {
-	return;
-}
 
 // See Server.h
 void ServerImpl::OnRun() {
@@ -138,20 +147,24 @@ void ServerImpl::OnRun() {
             tv.tv_usec = 0;
             setsockopt(client_socket, SOL_SOCKET, SO_RCVTIMEO, (const char *)&tv, sizeof tv);
         }
-		
-		//thread_pool.return_true();
-		//thread_pool.t_return_true<int> ();
-		//thread_pool.Execute(&foo);
-		
-		//if (thread_pool.ret_true())
-		//	_logger->warn("##");
-		if (not thread_pool.Execute(&ServerImpl::ProcessThread, this, client_socket)) { 
+
+		mutex.lock();
+		if (cnt >= MAX_CNT) {
 			close(client_socket);
-		};
+			continue;
+		}
+		cnt++;
+		mutex.unlock();
+		// thread_list.emplace_back(&ServerImpl::ProcessThread, this, client_socket);
+		thread_map.emplace(client_socket, 
+						   std::thread(&ServerImpl::ProcessThread, this, client_socket));
+
 	}
 
     // Cleanup on exit...
     _logger->warn("Network stopped");
+	
+	cv.notify_one();
 }
 
 void ServerImpl::ProcessThread(int client_socket) {
@@ -252,6 +265,17 @@ void ServerImpl::ProcessThread(int client_socket) {
 	
 	// We are done with this connection
 	close(client_socket);
+
+	{
+		std::unique_lock<std::mutex> lock(mutex);
+		cnt--;
+	}
+	
+	auto it = thread_map.find(client_socket);
+	it->second.detach();
+	thread_map.erase(it);
+	
+	cv.notify_one();
 }
 
 } // namespace MTblocking
