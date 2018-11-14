@@ -17,7 +17,6 @@ namespace Afina {
  * # Thread pool
  */
 class Executor {
-public:
     enum class State {
         // Threadpool is fully operational, tasks could be added and get executed
         kRun,
@@ -30,7 +29,7 @@ public:
         kStopped
     };
 
-	Executor(int size, int min_size = 1, int max_size = 10, int max_queue_size = 10);
+    Executor(std::string name, int size, int alpha_size, int betta_size, max_size);
     ~Executor();
 
     /**
@@ -61,7 +60,7 @@ private:
      * Main function that all pool threads are running. It polls internal task queue and execute tasks
      */
     // Why not reference ??
-	friend void perform(Executor*, std::function<void()> perform_first = []{});
+	friend void perform(Executor *executor, std::function<void ()> func = []{});
 
     /**
      * Mutex to protect state below from concurrent modification
@@ -79,15 +78,14 @@ private:
      */
     std::vector<std::thread> threads;
 	int free_threads_cnt;
-	std::chrono::seconds idle_time;
+	std::chrono::seconds idle_time(10);
     /**
      * Task queue
      */
     std::deque<std::function<void()>> tasks;
 	const int MAX_QUEUE_SIZE;
 
-	std::pair<std::function<void()>, bool> get_function();
-	bool delete_thread(std::thread::id);
+	std::function<void()> get_function();
     /**
      * Flag to stop bg threads
      */

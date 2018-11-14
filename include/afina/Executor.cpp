@@ -1,6 +1,6 @@
 namespace Afina {
 
-int max(int a, int b) {
+int max(const int& a, const int& b) {
 	if (a > b) {
 		return a;
 	} else {
@@ -8,7 +8,7 @@ int max(int a, int b) {
 	};
 }
 
-int min(int a, int b) {
+int min(const int& a, const int& b) {
 	if (a < b) {
 		return a;
 	} else {
@@ -19,26 +19,25 @@ int min(int a, int b) {
 namespace Executor {
     
 void Stop(bool await = false) {
+	std::unique_lock<std::mutex> lock(mutex);
 	state = State::kStopping;
 	if (await) {
-		std::unique_lock<std::mutex> lock(mutex);
-		empty_condition.wait(lock, []{return threads.size() == 0});
+		stop_condition.wait(lock, []{ return not threads.size(); });
 		state = State::kStop;
 	};
 }
 
 
 template <typename F, typename... Types> bool Execute(F &&func, Types... args) {
-	// Prepare "task"
 	auto exec = std::bind(std::forward<F>(func), std::forward<Types>(args)...);
 
-	std::unique_lock<std::mutex> lock(this->mutex);
+	std::unique_lock<std::mutex> lock(mutex);
 	if (state != State::kRun or tasks.size() == MAX_QUEUE_SIZE) {
 		return false;
 	};
 
-	if (free_threads_cnt == 0 and threads.size() < MAX_SIZE) {
-		threads.push_back(Afina::preform, this, exec)
+	if (not free_threads_cnt and threads.size() < HIGHT_WATERMARK) {
+		threads.push_back(Afina::preform, this, exec);
 	} else {
 		// Enqueue new task
 		tasks.push_back(exec);
@@ -48,13 +47,14 @@ template <typename F, typename... Types> bool Execute(F &&func, Types... args) {
 }
 
 Executor(std::string name, int size, int min_size = 1, 
-		 int max_size = 10,  int max_queue_size = 10): MIN_SIZE(min_size), 
-								   					   MAX_SIZE(max_size),
+		 int max_size = 10,  int max_queue_size = 10): LOW_WATERMARK(min_size), 
+								   					   HIGHT_WATERMARK(max_size),
 													   MAX_QUEUE_SIZE(max_queue_size),
-													   free_threads_cnt(0) {
+													   free_threads_cnt(0),
+													   state(State::kRun) {
 
-	size = max(size, MIN_SIZE);
-	size = min(size, MAX_SIZE);
+	size = max(size, LOW_WATERMARK);
+	size = min(size, HIGHT_WATERMARK);
 
 	threads.reserve(size);
 	for (int i = 0; i < size; i++) {
@@ -62,36 +62,39 @@ Executor(std::string name, int size, int min_size = 1,
 	};
 }
 	
-std::function<void()> Afina::Executor::get_function(bool& delete_thread) {
+std::pair<std::function<void()>, bool> Afina::Executor::get_function() {
 	std::unique_lock<std::mutex> lock(mutex);
 	free_threads_cnt++;
-	if (!tasks.size()) {
+	if (not tasks.size()) {
 		if (state == State::kStopping) {
-			delete_thread = true;
-			return [](){};
+			free_threads_cnt--;
+			return std::make_pair<std::function<void()>, bool> ([]{}, true);
 		};
-		if (not executor->empty_condition.wait_for(lock, idle_time, [&tasks](){return tasks.size()})) {
+		if (not executor->empty_condition.wait_for(lock, idle_time, [&tasks]{ return tasks.size(); })) {
 			delete_thread = true;
-			return [](){};
+			free_threads_cnt--;
+			return std::make_pair<std::function<void()>, bool> ([]{}, true);
 		};
 	};
 
 	free_threads_cnt--;
 	function = std::move(tasks.front());
 	tasks.pop_front();
-	return function;
+	return std::make_pair(function, false);
 }
 
 bool delete_thread(std::thread::id id) {
-	predicate = [](const std::thread& thread){ return id==thread.get_id() };
+	predicate = [](const std::thread& thread){ return id == thread.get_id(); };
+	
 	auto erase_pos = std::find_if(threads.begin(), threads.end(), predicate)
 
 	if (erase_pos != threads.end()) {
-		std::unique_lock<std::mutex> lock(mutex);
-		if (threads.size() > MIN_SIZE or state == State::kStopping) {
+		if (state == State::kStopping) {
+			threads[erase_pos].detach();
 			threads.erase(erase_pos);
 			if (not tasks.size() and state == State::kStopping) {
-				empty_condition.notify_one();
+				stop_condition.notify_one();
+			};
 			return true;
 		} else {
 			return false;
@@ -102,20 +105,25 @@ bool delete_thread(std::thread::id id) {
 
 } // namespace Executor
 
-void Afina::preform(Afina::Executor* executor, std::function<void()> pereform_first) {
+void Afina::pereform(Afina::Executor* executor, std::function<void()> perform_first) {
 	perform_first();
 	
-	while ((executor->state == kRun) or (executor->state == kStopping)) {
-		bool delete_thread = false;
+	while (executor->state == kRun or executor->state == kStopping) {
 		
-		function = executor->get_function(delete_thread);
-		if (delete_thread and executor->tasks.size() > executor->MIN_SIZE) {
+		// Get function from queue
+		auto result_pair = executor->get_function();
+		
+		// Check necessity of current thread
+		std::unique_lock<std::mutex> lock(mutex);
+		if (result_pair.second and executor->threads.size() > executor->LOW_WATERMARK) {
 			if (executor->delete_thread(std::this_thread::get_id())) {
 				return;
-			} else
-				delete_thread = false;
+			};
 		};
-		function();
+		lock.unlock();
+
+		// Execute function
+		result_pair.first();
 	};
 }
 
