@@ -8,13 +8,13 @@
 
 namespace Afina {
 
-Executor::Executor(int size/*=4*/, int min_size/*=1*/, int max_size/*=10*/,
-				   int max_queue_size/*=10*/): LOW_WATERMARK(min_size), 
-											   HIGHT_WATERMARK(max_size),
-											   MAX_QUEUE_SIZE(max_queue_size),
-											   free_threads_cnt(0),
-											   idle_time(10),
-											   state(State::kRun) {
+Executor::Executor(int size, int min_size, 
+				   int max_size, int max_queue_size): LOW_WATERMARK(min_size), 
+									   			      HIGHT_WATERMARK(max_size),
+												   	  MAX_QUEUE_SIZE(max_queue_size),
+												   	  free_threads_cnt(0),
+												   	  idle_time(10),
+											   		  state(State::kRun) {
 
 	// Correct size into [LOW_WATERMARK, HIGHT_WATERMARK] interval
 	size = size > HIGHT_WATERMARK ? HIGHT_WATERMARK : size;
@@ -29,7 +29,7 @@ Executor::Executor(int size/*=4*/, int min_size/*=1*/, int max_size/*=10*/,
 Executor::~Executor() {};
 
 // See Executor.h
-void Executor::Stop(bool await/*=false*/) {
+void Executor::Stop(bool await) {
 	std::unique_lock<std::mutex> lock(mutex);
 	state = State::kStopping;
 	empty_condition.notify_all();	
