@@ -34,7 +34,7 @@ void Executor::Stop(bool await) {
 	state = State::kStopping;
 	empty_condition.notify_all();	
 	if (await) {
-		stop_condition.wait(lock, [this]{return !threads.size();});
+		stop_condition.wait(lock, [this]{return threads.empty();}); // !!
 		state = State::kStopped;
 	};
 }
