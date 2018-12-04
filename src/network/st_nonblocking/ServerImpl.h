@@ -3,8 +3,9 @@
 
 #include <thread>
 #include <vector>
-
+#include "Connection.h"
 #include <afina/network/Server.h>
+#include <protocol/Parser.h>
 
 namespace spdlog {
 class logger;
@@ -13,9 +14,6 @@ class logger;
 namespace Afina {
 namespace Network {
 namespace STnonblock {
-
-// Forward declaration, see Worker.h
-class Worker;
 
 /**
  * # Network resource manager implementation
@@ -54,8 +52,10 @@ private:
     // Curstom event "device" used to wakeup workers
     int _event_fd;
 
-	std::vector<Conntection> _connections;
-    // IO thread
+	// Active connections
+	std::vector<Connection> _connections;
+    
+	// IO thread
     std::thread _work_thread;
 };
 

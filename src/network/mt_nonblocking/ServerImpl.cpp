@@ -27,7 +27,7 @@
 
 namespace Afina {
 namespace Network {
-namespace NonBlocking {
+namespace MTnonblocking {
 
 // See Server.h
 ServerImpl::ServerImpl(std::shared_ptr<Afina::Storage> ps, std::shared_ptr<Logging::Service> pl) : Server(ps, pl) {}
@@ -213,6 +213,6 @@ void ServerImpl::OnRun() {
     _logger->warn("Acceptor stopped");
 }
 
-} // namespace NonBlocking
+} // namespace MTnonblocking
 } // namespace Network
 } // namespace Afina

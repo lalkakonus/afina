@@ -1,5 +1,5 @@
-#ifndef AFINA_NETWORK_NONBLOCKING_SERVER_H
-#define AFINA_NETWORK_NONBLOCKING_SERVER_H
+#ifndef AFINA_NETWORK_MT_NONBLOCKING_SERVER_H
+#define AFINA_NETWORK_MT_NONBLOCKING_SERVER_H
 
 #include <thread>
 #include <vector>
@@ -12,7 +12,7 @@ class logger;
 
 namespace Afina {
 namespace Network {
-namespace NonBlocking {
+namespace MTnonblocking {
 
 // Forward declaration, see Worker.h
 class Worker;
@@ -65,8 +65,8 @@ private:
     std::vector<Worker> _workers;
 };
 
-} // namespace NonBlocking
+} // namespace MTnonblocking
 } // namespace Network
 } // namespace Afina
 
-#endif // AFINA_NETWORK_NONBLOCKING_SERVER_H
+#endif // AFINA_NETWORK_MT_NONBLOCKING_SERVER_H

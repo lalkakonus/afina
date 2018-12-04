@@ -21,7 +21,12 @@
 #include <afina/Storage.h>
 #include <afina/logging/Service.h>
 
-#include "Connection.h"
+#include <afina/Storage.h>
+#include <afina/execute/Command.h>
+#include <afina/logging/Service.h>
+#include <algorithm>
+#include <stdexcept>
+
 #include "Utils.h"
 
 namespace Afina {
@@ -33,12 +38,11 @@ ServerImpl::ServerImpl(std::shared_ptr<Afina::Storage> ps, std::shared_ptr<Loggi
 
 // See Server.h
 ServerImpl::~ServerImpl() {
-
 }
 
 // See Server.h
 void ServerImpl::Start(uint16_t port, uint32_t n_acceptors, uint32_t n_workers) {
-    _logger = pLogging->select("network");
+	_logger = pLogging->select("network");
     _logger->info("Start network service");
 
     sigset_t sig_mask;
@@ -61,7 +65,8 @@ void ServerImpl::Start(uint16_t port, uint32_t n_acceptors, uint32_t n_workers) 
     }
 
     int opts = 1;
-    if (setsockopt(_server_socket, SOL_SOCKET, (SO_KEEPALIVE), &opts, sizeof(opts)) == -1) {
+    if (setsockopt(_server_socket, SOL_SOCKET, (SO_KEEPALIVE | SO_REUSEADDR | SO_REUSEPORT),\
+				   &opts, sizeof(opts)) == -1) {
         close(_server_socket);
         throw std::runtime_error("Socket setsockopt() failed: " + std::string(strerror(errno)));
     }
@@ -99,6 +104,10 @@ void ServerImpl::Stop() {
 void ServerImpl::Join() {
     // Wait for work to be complete
     _work_thread.join();
+	if (close(_server_socket) < 0) {
+		_logger->error("Failed to close server socket: " + std::string(strerror(errno)));
+	}
+	_logger->warn("Server stopped");
 }
 
 // See ServerImpl.h
@@ -142,53 +151,69 @@ void ServerImpl::OnRun() {
 				}
 
 				// That is some connection!
-				auto predicate = [current_event.data.fd](const Connection &connection) { 
-					return connection.event.fd == current_event.data.fd; 
+				auto predicate = [&current_event](const Connection &connection) { 
+					return connection._event.data.fd == current_event.data.fd; 
 				};
 
 				auto connection = std::find_if(_connections.begin(), _connections.end(), predicate);
 				// Connection *pc = static_cast<Connection *>(current_event.data.ptr);
 
 				auto old_mask = connection->_event.events;
-				if ((current_event.events & EPOLLERR) || (current_event.events & EPOLLHUP)) {
+				if (current_event.events & EPOLLERR) {
 					connection->OnError();
-				} else {
-					// Depends on what connection wants...
-					if (current_event.events & EPOLLIN) {
-						connection->DoRead();
-					}
-					if (current_event.events & EPOLLOUT) {
-						connection->DoWrite();
+				} else {	
+					if (current_event.events & EPOLLRDHUP) {
+						connection->OnClose();
+					} else {
+						// Depends on what connection wants...
+						if (current_event.events & EPOLLIN) {
+							connection->DoRead();
+						}
+						if (current_event.events & EPOLLOUT) {
+							connection->DoWrite();
+						}
 					}
 				}
 
 				// Does it alive?
 				if (!connection->isAlive()) {
-					if (epoll_ctl(epoll_descr, EPOLL_CTL_DEL, connection->_socket, NULL)) {
+					if (epoll_ctl(epoll_descr, EPOLL_CTL_DEL, connection->_event.data.fd, NULL)) {
 						_logger->error("Failed to delete connection from epoll");
 					}
-
+					_logger->debug("Connection closed.");
+					if (close(connection->_event.data.fd) == -1) {
+						std::cout << "Socket setsockopt() failed: " << std::string(strerror(errno)) << std::endl;
+					}
 					_connections.erase(connection);
 				} else if (connection->_event.events != old_mask) {
-					if (epoll_ctl(epoll_descr, EPOLL_CTL_MOD, connection->_socket, &connection>_event)) {
+					if (epoll_ctl(epoll_descr, EPOLL_CTL_MOD, connection->_event.data.fd, &connection->_event)) {
 						_logger->error("Failed to change connection event mask");
+						if (close(connection->_event.data.fd) == -1) {
+							std::cout << "Socket setsockopt() failed: " <<\
+								std::string(strerror(errno)) << std::endl;
+						}
 						_connections.erase(connection);
 					}
 				}
 			}
 		}
+		
+		for (auto &connection: _connections) {
+			if (epoll_ctl(epoll_descr, EPOLL_CTL_DEL, connection._event.data.fd, NULL)) {
+				_logger->error("# Failed to delete connection from epoll");
+			}
+			if (close(connection._event.data.fd) == -1) {
+				_logger->error("# Failed to close socket" + std::string(strerror(errno)));
+			}
+		}
+		
 		_logger->warn("Acceptor stopped");
-	} catch (const runtime_error &error) {
+	} catch (const std::runtime_error &error) {
 		_logger->error(error.what());
 	} catch (...) {
 		_logger->error("Error happens");
 	}
-	
-	for (auto &connection: _connections) {
-		if (epoll_ctl(epoll_descr, EPOLL_CTL_DEL, connection->_socket, NULL)) {
-			_logger->error("Failed to delete connection from epoll");
-		}
-	}
+
 }
 
 void ServerImpl::OnNewConnection(int epoll_descr) {
@@ -217,14 +242,20 @@ void ServerImpl::OnNewConnection(int epoll_descr) {
         }
 
         // Register the new FD to be monitored by epoll.
-        _connections.emplace_back(infd, pStorage, _logger);
+		// _connections.reserve(_connections.capacity() + 1);
+		_connections.emplace_back(infd, pStorage, pLogging);
+		//_connections.push_back(std::move(Connection(infd, pStorage, pLogging)));
 
         // Register connection in worker's epoll
-		auto connection = _connections.back(); 
+		Connection &connection = _connections.back(); 
         connection.Start();
         if (connection.isAlive()) {
-        	if (epoll_ctl(epoll_descr, EPOLL_CTL_ADD, connection._socket, &connection.event) < 0) {
-            	_connections.pop_back();
+        	if (epoll_ctl(epoll_descr, EPOLL_CTL_ADD, connection._event.data.fd, &connection._event) < 0) {
+                _logger->error("Connection error ;(");
+				if (close(connection._event.data.fd) == -1) {
+					std::cout << "Socket setsockopt() failed: " << std::string(strerror(errno)) << std::endl;
+				}
+				_connections.pop_back();
 			}
         } 
     }

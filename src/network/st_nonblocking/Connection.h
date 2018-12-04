@@ -2,8 +2,26 @@
 #define AFINA_NETWORK_ST_NONBLOCKING_CONNECTION_H
 
 #include <cstring>
-
+#include <string>
 #include <sys/epoll.h>
+#include <afina/Storage.h>
+#include <afina/execute/Command.h>
+#include <afina/logging/Service.h>
+#include <protocol/Parser.h>
+#include <spdlog/logger.h>
+#include "Utils.h"
+#include <iostream>
+#include <sys/uio.h>
+
+/*
+namespace Afina {
+class Storage;
+}
+*/
+
+namespace spdlog {
+class logger;
+}
 
 namespace Afina {
 namespace Network {
@@ -11,11 +29,17 @@ namespace STnonblock {
 
 class Connection {
 public:
-    Connection(int s, std::shared_ptr<Afina::Storage> pStorage, std::shared_ptr<Logging::Service>);
+	~Connection();
+    Connection(int s, std::shared_ptr<Afina::Storage>, std::shared_ptr<Afina::Logging::Service>);
 
     inline bool isAlive() const { 
 		return _isActive;
 	}
+	
+	Connection(const Connection &other);
+	//Connection(Connection &&other);
+	//Connection& operator=(Connection &&other); 
+	Connection& operator=(const Connection &other); 
 
     void Start();
 
@@ -32,14 +56,17 @@ private:
 	char client_buffer[4096];
     Protocol::Parser parser;
     std::string argument_for_command;
-    std::unique_ptr<Execute::Command> command_to_execute;
+    // std::unique_ptr<Execute::Command> command_to_execute;
+    std::shared_ptr<Execute::Command> command_to_execute;
 
+	// std::shared_ptr<Logging::Service> _logger;
     std::shared_ptr<spdlog::logger> _logger;
 	std::shared_ptr<Afina::Storage> _pStorage;
+    std::shared_ptr<Afina::Logging::Service> pLogging;
 	
 	int _shift;
     bool _isActive;
-	int _socket;
+	// int _socket;
     struct epoll_event _event;
 	std::vector<std::string> _response;
 

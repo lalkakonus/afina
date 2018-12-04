@@ -1,5 +1,5 @@
-#ifndef AFINA_NETWORK_NONBLOCKING_WORKER_H
-#define AFINA_NETWORK_NONBLOCKING_WORKER_H
+#ifndef AFINA_NETWORK_MT_NONBLOCKING_WORKER_H
+#define AFINA_NETWORK_MT_NONBLOCKING_WORKER_H
 
 #include <atomic>
 #include <memory>
@@ -18,7 +18,7 @@ class Service;
 }
 
 namespace Network {
-namespace NonBlocking {
+namespace MTnonblocking {
 
 /**
  * # Thread running epoll
