@@ -7,7 +7,7 @@
 
 namespace Afina {
 namespace Network {
-namespace MTnonblocking {
+namespace MTnonblock {
 
 class Connection {
 public:
@@ -34,7 +34,7 @@ private:
     struct epoll_event _event;
 };
 
-} // namespace MTnonblocking
+} // namespace MTnonblock
 } // namespace Network
 } // namespace Afina
 

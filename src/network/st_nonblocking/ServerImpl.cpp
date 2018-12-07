@@ -156,7 +156,6 @@ void ServerImpl::OnRun() {
 				};
 
 				auto connection = std::find_if(_connections.begin(), _connections.end(), predicate);
-				// Connection *pc = static_cast<Connection *>(current_event.data.ptr);
 
 				auto old_mask = connection->_event.events;
 				if (current_event.events & EPOLLERR) {
@@ -242,9 +241,7 @@ void ServerImpl::OnNewConnection(int epoll_descr) {
         }
 
         // Register the new FD to be monitored by epoll.
-		// _connections.reserve(_connections.capacity() + 1);
 		_connections.emplace_back(infd, pStorage, pLogging);
-		//_connections.push_back(std::move(Connection(infd, pStorage, pLogging)));
 
         // Register connection in worker's epoll
 		Connection &connection = _connections.back(); 

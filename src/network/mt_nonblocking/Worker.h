@@ -18,7 +18,7 @@ class Service;
 }
 
 namespace Network {
-namespace MTnonblocking {
+namespace MTnonblock {
 
 /**
  * # Thread running epoll

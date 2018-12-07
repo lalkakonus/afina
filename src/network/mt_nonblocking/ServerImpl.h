@@ -12,7 +12,7 @@ class logger;
 
 namespace Afina {
 namespace Network {
-namespace MTnonblocking {
+namespace MTnonblock {
 
 // Forward declaration, see Worker.h
 class Worker;

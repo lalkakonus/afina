@@ -16,21 +16,9 @@ Connection::Connection(int s, std::shared_ptr<Afina::Storage> pStorage,
 	_event.data.fd = s;
 }
 
-Connection::Connection(const Connection &other) = default;//{
-//	std::cout << "Connection &\n";
-//};
+Connection::Connection(const Connection &other) = default;
 
-Connection& Connection::operator=(const Connection &other) = default;//{
-//	std::cout << "operator =\n";
-//};
-
-//Connection::Connection(Connection &&other) {
-//	std::cout << "Connection &&\n";
-//};
-
-//Connection& Connection::operator=(Connection &&other) {
-//	std::cout << "opearator move\n";
-//};
+Connection& Connection::operator=(const Connection &other) = default;
 
 // See Connection.h
 void Connection::Start() { 
@@ -51,9 +39,6 @@ void Connection::OnError() {
 	_logger->debug("Error happens");
 	_isActive = false;
 }
-
-// Connection &Connection::opeartor=(Connection &&other) {
-// }
 
 // See Connection.h
 void Connection::OnClose() {
@@ -148,7 +133,6 @@ void Connection::DoWrite() {
 	int iovcnt = _response.size();
 	iovec* answer = new iovec[iovcnt];
 	for (int i = 0; i < iovcnt; i++) {
-		//answer[i].iov_base = _response[i].data();
 		answer[i].iov_base = &_response[i][0];
 		answer[i].iov_len = _response[i].size();
 	}

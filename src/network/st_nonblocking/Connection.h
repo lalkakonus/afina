@@ -13,11 +13,9 @@
 #include <iostream>
 #include <sys/uio.h>
 
-/*
 namespace Afina {
 class Storage;
 }
-*/
 
 namespace spdlog {
 class logger;
@@ -37,8 +35,6 @@ public:
 	}
 	
 	Connection(const Connection &other);
-	//Connection(Connection &&other);
-	//Connection& operator=(Connection &&other); 
 	Connection& operator=(const Connection &other); 
 
     void Start();
@@ -56,17 +52,14 @@ private:
 	char client_buffer[4096];
     Protocol::Parser parser;
     std::string argument_for_command;
-    // std::unique_ptr<Execute::Command> command_to_execute;
     std::shared_ptr<Execute::Command> command_to_execute;
 
-	// std::shared_ptr<Logging::Service> _logger;
     std::shared_ptr<spdlog::logger> _logger;
 	std::shared_ptr<Afina::Storage> _pStorage;
     std::shared_ptr<Afina::Logging::Service> pLogging;
 	
 	int _shift;
     bool _isActive;
-	// int _socket;
     struct epoll_event _event;
 	std::vector<std::string> _response;
 

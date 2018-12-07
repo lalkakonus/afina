@@ -27,7 +27,7 @@
 
 namespace Afina {
 namespace Network {
-namespace MTnonblocking {
+namespace MTnonblock {
 
 // See Server.h
 ServerImpl::ServerImpl(std::shared_ptr<Afina::Storage> ps, std::shared_ptr<Logging::Service> pl) : Server(ps, pl) {}
