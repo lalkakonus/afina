@@ -58,7 +58,7 @@ private:
 	std::shared_ptr<Afina::Storage> _pStorage;
     std::shared_ptr<Afina::Logging::Service> pLogging;
 	
-	int _shift;
+	int _shift, write_shift;
     bool _isActive;
     struct epoll_event _event;
 	std::vector<std::string> _response;

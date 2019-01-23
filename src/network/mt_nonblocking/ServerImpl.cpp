@@ -60,7 +60,8 @@ void ServerImpl::Start(uint16_t port, uint32_t n_acceptors, uint32_t n_workers) 
     }
 
     int opts = 1;
-    if (setsockopt(_server_socket, SOL_SOCKET, (SO_KEEPALIVE), &opts, sizeof(opts)) == -1) {
+    if (setsockopt(_server_socket, SOL_SOCKET, (SO_KEEPALIVE | SO_REUSEADDR | SO_REUSEPORT),\
+				   &opts, sizeof(opts)) == -1) {
         close(_server_socket);
         throw std::runtime_error("Socket setsockopt() failed: " + std::string(strerror(errno)));
     }
@@ -96,7 +97,7 @@ void ServerImpl::Start(uint16_t port, uint32_t n_acceptors, uint32_t n_workers) 
 
     _workers.reserve(n_workers);
     for (int i = 0; i < n_workers; i++) {
-        _workers.emplace_back(pStorage, pLogging);
+        _workers.emplace_back(pStorage, pLogging, _connections, _mutex);
         _workers.back().Start(_data_epoll_fd);
     }
 
@@ -130,6 +131,10 @@ void ServerImpl::Join() {
     for (auto &w : _workers) {
         w.Join();
     }
+
+	for (auto &it: _connections) {
+		delete it;
+	}
 }
 
 // See ServerImpl.h
@@ -156,60 +161,69 @@ void ServerImpl::OnRun() {
 
     bool run = true;
     std::array<struct epoll_event, 64> mod_list;
-    while (run) {
-        int nmod = epoll_wait(acceptor_epoll, &mod_list[0], mod_list.size(), -1);
-        _logger->debug("Acceptor wokeup: {} events", nmod);
+    try {
+		while (run) {
+			int nmod = epoll_wait(acceptor_epoll, &mod_list[0], mod_list.size(), -1);
+			_logger->debug("Acceptor wokeup: {} events", nmod);
 
-        for (int i = 0; i < nmod; i++) {
-            struct epoll_event &current_event = mod_list[i];
-            if (current_event.data.fd == _event_fd) {
-                _logger->debug("Break acceptor due to stop signal");
-                run = false;
-                continue;
-            }
+			for (int i = 0; i < nmod; i++) {
+				struct epoll_event &current_event = mod_list[i];
+				if (current_event.data.fd == _event_fd) {
+					_logger->debug("Break acceptor due to stop signal");
+					run = false;
+					continue;
+				}
 
-            for (;;) {
-                struct sockaddr in_addr;
-                socklen_t in_len;
+				for (;;) {
+					struct sockaddr in_addr;
+					socklen_t in_len;
 
-                // No need to make these sockets non blocking since accept4() takes care of it.
-                in_len = sizeof in_addr;
-                int infd = accept4(_server_socket, &in_addr, &in_len, SOCK_NONBLOCK | SOCK_CLOEXEC);
-                if (infd == -1) {
-                    if ((errno == EAGAIN) || (errno == EWOULDBLOCK)) {
-                        break; // We have processed all incoming connections.
-                    } else {
-                        _logger->error("Failed to accept socket");
-                        break;
-                    }
-                }
+					// No need to make these sockets non blocking since accept4() takes care of it.
+					in_len = sizeof in_addr;
+					int infd = accept4(_server_socket, &in_addr, &in_len, SOCK_NONBLOCK | SOCK_CLOEXEC);
+					if (infd == -1) {
+						if ((errno == EAGAIN) || (errno == EWOULDBLOCK)) {
+							break; // We have processed all incoming connections.
+						} else {
+							_logger->error("Failed to accept socket");
+							break;
+						}
+					}
 
-                // Print host and service info.
-                char hbuf[NI_MAXHOST], sbuf[NI_MAXSERV];
-                int retval = getnameinfo(&in_addr, in_len, hbuf, sizeof hbuf, sbuf, sizeof sbuf,
-                                         NI_NUMERICHOST | NI_NUMERICSERV);
-                if (retval == 0) {
-                    _logger->info("Accepted connection on descriptor {} (host={}, port={})\n", infd, hbuf, sbuf);
-                }
+					// Print host and service info.
+					char hbuf[NI_MAXHOST], sbuf[NI_MAXSERV];
+					int retval = getnameinfo(&in_addr, in_len, hbuf, sizeof hbuf, sbuf, sizeof sbuf,
+											 NI_NUMERICHOST | NI_NUMERICSERV);
+					if (retval == 0) {
+						_logger->info("Accepted connection on descriptor {} (host={}, port={})\n", 
+									  infd, hbuf, sbuf);
+					}
 
-                // Register the new FD to be monitored by epoll.
-                Connection *pc = new Connection(infd);
-                if (pc == nullptr) {
-                    throw std::runtime_error("Failed to allocate connection");
-                }
+					// Register the new FD to be monitored by epoll.
+					Connection *pc = new Connection(infd, pStorage, pLogging);
+					if (pc == nullptr) {
+						throw std::runtime_error("Failed to allocate connection");
+					}
 
-                // Register connection in worker's epoll
-                pc->Start();
-                if (pc->isAlive()) {
-                    pc->_event.events |= EPOLLONESHOT;
-                    if (epoll_ctl(_data_epoll_fd, EPOLL_CTL_MOD, pc->_socket, &pc->_event)) {
-                        pc->OnError();
-                        delete pc;
-                    }
-                }
-            }
-        }
-    }
+					// Register connection in worker's epoll
+					pc->Start();
+					if (pc->isActive()) {
+						if (epoll_ctl(_data_epoll_fd, EPOLL_CTL_ADD, pc->_socket, &pc->_event)) {
+							pc->OnError();
+							delete pc;
+						} else {
+							std::unique_lock<std::mutex> lock(_mutex);
+							_connections.insert(pc);
+						}
+					}
+				}
+			}
+		}
+	} catch (const std::runtime_error &error) {
+		_logger->warn(error.what());
+	} catch (...) {
+		_logger->warn("Error happend");
+	}
     _logger->warn("Acceptor stopped");
 }
 

@@ -3,7 +3,7 @@
 
 namespace Afina {
 namespace Network {
-namespace MTnonblocking {
+namespace MTnonblock {
 
 void make_socket_non_blocking(int sfd);
 

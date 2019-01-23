@@ -21,28 +21,30 @@ namespace Network {
 namespace MTnonblock {
 
 // See Worker.h
-Worker::Worker(std::shared_ptr<Afina::Storage> ps, std::shared_ptr<Afina::Logging::Service> pl)
-    : _pStorage(ps), _pLogging(pl), isRunning(false), _epoll_fd(-1) {
-    // TODO: implementation here
+Worker::Worker(std::shared_ptr<Afina::Storage> ps, std::shared_ptr<Afina::Logging::Service> pl,
+			   std::set<Connection*> &connections, std::mutex &mutex):
+    		   _pStorage(ps), _pLogging(pl), isRunning(false), 
+			   _epoll_fd(-1), _connections(connections), _mutex(mutex){}
+
+// See Worker.h
+Worker::~Worker() {}
+
+// See Worker.h
+Worker::Worker(Worker &&other): _connections(other._connections),
+								_mutex(other._mutex) {
+	*this = std::move(other);
 }
 
 // See Worker.h
-Worker::~Worker() {
-    // TODO: implementation here
-}
-
-// See Worker.h
-Worker::Worker(Worker &&other) { *this = std::move(other); }
-
-// See Worker.h
-Worker &Worker::operator=(Worker &&other) {
+Worker &Worker::operator=(Worker &&other){
     _pStorage = std::move(other._pStorage);
     _pLogging = std::move(other._pLogging);
     _logger = std::move(other._logger);
     _thread = std::move(other._thread);
     _epoll_fd = other._epoll_fd;
-
     other._epoll_fd = -1;
+	_connections = other._connections;
+	//_mutex = other._mutex;
     return *this;
 }
 
@@ -57,7 +59,9 @@ void Worker::Start(int epoll_fd) {
 }
 
 // See Worker.h
-void Worker::Stop() { isRunning = false; }
+void Worker::Stop() { 
+	isRunning = false;
+}
 
 // See Worker.h
 void Worker::Join() {
@@ -88,13 +92,14 @@ void Worker::OnRun() {
             // on changes in OUTHER loop
             if (current_event.data.ptr == nullptr) {
                 continue;
+				// break; ??
             }
 
             // Some connection gets new data
             Connection *pconn = static_cast<Connection *>(current_event.data.ptr);
-            if ((current_event.events & EPOLLERR) || (current_event.events & EPOLLHUP)) {
+            if (current_event.events & EPOLLERR) {
                 pconn->OnError();
-            } else if (current_event.events & EPOLLRDHUP) {
+			} else if (current_event.events & EPOLLRDHUP) {
                 pconn->OnClose();
             } else {
                 // Depends on what connection wants...
@@ -107,11 +112,12 @@ void Worker::OnRun() {
             }
 
             // Rearm connection
-            if (pconn->isAlive()) {
+            if (pconn->isActive()) {
                 pconn->_event.events |= EPOLLONESHOT;
                 if (epoll_ctl(_epoll_fd, EPOLL_CTL_MOD, pconn->_socket, &pconn->_event)) {
                     pconn->OnError();
                     delete pconn;
+					_connections.erase(pconn);
                 }
             }
             // Or delete closed one
@@ -120,6 +126,7 @@ void Worker::OnRun() {
                     std::cerr << "Failed to delete connection!" << std::endl;
                 }
                 delete pconn;
+				_connections.erase(pconn);
             }
         }
         // TODO: Select timeout...

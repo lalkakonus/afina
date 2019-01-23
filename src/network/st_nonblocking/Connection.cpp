@@ -4,13 +4,12 @@ namespace Afina {
 namespace Network {
 namespace STnonblock {
 
-Connection::~Connection() {
-	std::cout << "Connection~\n";
-}
+Connection::~Connection() {}
 
 Connection::Connection(int s, std::shared_ptr<Afina::Storage> pStorage, 
 					   std::shared_ptr<Afina::Logging::Service> pl):
-		   pLogging(pl), _pStorage(pStorage), _shift(0), _isActive(false) {
+		   pLogging(pl), _pStorage(pStorage), _shift(0), _isActive(false),
+			write_shift(0) {
 	std::cout << "Connection()\n";
 	std::memset(&_event, 0, sizeof(struct epoll_event));
 	_event.data.fd = s;
@@ -26,7 +25,7 @@ void Connection::Start() {
 	try {
 		_logger = pLogging->select("network");
 		_isActive = true;
-		make_socket_non_blocking(_event.data.fd);
+		// make_socket_non_blocking(_event.data.fd);
 		_event.events = EPOLLIN | EPOLLRDHUP | EPOLLPRI;
 	} catch (const std::runtime_error &error) {
 		_isActive = false;
@@ -52,7 +51,7 @@ void Connection::DoRead() {
 	_logger->debug("Start reading");
 	try {
 		while ((readed_bytes = read(_event.data.fd, client_buffer + _shift, 
-									 sizeof(client_buffer - _shift))) > 0) {
+									 sizeof(client_buffer) - _shift)) > 0) {
 			readed_bytes += _shift; 
 			_logger->debug("Got {} bytes from socket", readed_bytes);
 			// Single block of data readed from the socket could 
@@ -112,7 +111,7 @@ void Connection::DoRead() {
 					result += "\r\n";
 
 					_response.push_back(result);
-					_event.events = EPOLLIN | EPOLLOUT | EPOLLRDHUP | EPOLLPRI;
+					_event.events = EPOLLIN | EPOLLOUT | EPOLLRDHUP;
 
 					// Prepare for the next command
 					command_to_execute.reset();
@@ -130,9 +129,22 @@ void Connection::DoRead() {
 
 // See Connection.h
 void Connection::DoWrite() {
+	iovec answer[64];
 	int iovcnt = _response.size();
-	iovec* answer = new iovec[iovcnt];
-	for (int i = 0; i < iovcnt; i++) {
+	if (iovcnt > 64) {
+		iovcnt = 64;
+	}
+
+	int i = 0;
+
+	// No reallocation for last element
+	if (write_shift) {
+		answer[0].iov_base = (char *)&_response[i][0] + write_shift;;
+		answer[0].iov_len = _response[i].size() - write_shift;
+		i = 1;
+	}
+
+	for (; i < iovcnt; i++) {
 		answer[i].iov_base = &_response[i][0];
 		answer[i].iov_len = _response[i].size();
 	}
@@ -143,18 +155,17 @@ void Connection::DoWrite() {
 	for (pos = 0; pos < iovcnt; pos++) {
 		if (residue >= answer[pos].iov_len) {
 			residue -= answer[pos].iov_len;
+		} else {
+			break;
 		}
 	}
 
 	_response.erase(_response.begin(), _response.begin() + pos);
-	if (residue) {
-		_response[pos].erase(_response[pos].begin(), _response[pos].begin() + residue);
-	}
+	write_shift = residue;
 
 	if (_response.empty()) {
 		_event.events = EPOLLIN | EPOLLRDHUP | EPOLLPRI;
 	}
-	delete[] answer;
 }
 
 } // namespace STnonblock

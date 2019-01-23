@@ -3,8 +3,10 @@
 
 #include <thread>
 #include <vector>
-
+#include <set>
+#include <mutex>
 #include <afina/network/Server.h>
+#include "Connection.h"
 
 namespace spdlog {
 class logger;
@@ -60,6 +62,9 @@ private:
 
     // Curstom event "device" used to wakeup workers
     int _event_fd;
+	std::set<Connection*> _connections;
+	
+	std::mutex _mutex;
 
     // threads serving read/write requests
     std::vector<Worker> _workers;
