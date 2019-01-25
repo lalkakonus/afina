@@ -1,10 +1,12 @@
-#include <afina/coroutine/Engine.h>
+#include <afina/coroutine/EngineEpoll.h>
 
 #include <setjmp.h>
 #include <stdio.h>
 #include <string.h>
+#include <iostream>
 
 namespace Afina {
+namespace Network {
 namespace Coroutine {
 
 void Engine::Store(context &ctx) {
@@ -65,6 +67,14 @@ void Engine::yield() {
     if (candidate) {
         Enter(*candidate);
     }
+    
+    if (cur_routine && !cur_routine->block) {
+        return;
+    }
+    
+    if (cur_routine != idle_ctx) {
+        Enter(*idle_ctx);
+    }
 }
 
 void Engine::sched(void *routine_) {
@@ -80,5 +90,67 @@ void Engine::sched(void *routine_) {
     }
 }
 
+void Engine::Wait() {
+    if (!cur_routine->block) {
+        _swap_list(alive, blocked, cur_routine);
+        cur_routine->block = true;
+    }
+    cur_routine->events = 0;
+    yield();
+}
+
+void Engine::Notify(context& ctx) {
+    if (ctx.block) {
+        _swap_list(blocked, alive, &ctx);
+        ctx.block = false;
+    }
+}
+
+void Engine::_swap_list(context * &list1, context * &list2, context * const &routine) {
+    if (routine->prev != nullptr) {
+        routine->prev->next = routine->next;
+    }
+
+    if (routine->next != nullptr) {
+        routine->next->prev = routine->prev;
+    }
+
+    if (list1 == routine) {
+        list1 = list1->next;
+    }
+        
+    routine->next = list2;
+    list2 = routine;
+        
+    if (routine->next != nullptr) {
+        routine->next->prev = routine;
+    }
+}
+
+int Engine::GetCurEvents() const {
+    return cur_routine->events;
+}
+
+void Engine::SetEventsAndNotify(void * ptr, int events) {
+    context * con_ptr = static_cast<context *>(ptr);
+    con_ptr->events |= events;
+    Notify(*con_ptr);
+}
+
+void Engine::NotifyAll() {
+    for (auto ptr = blocked; ptr; ptr = blocked) {
+        Notify(*ptr);
+    }
+}
+
+bool Engine::NeedWait() const {
+    return blocked && !alive;
+}
+
+void * Engine::GetCurRoutinePointer() const {
+    return cur_routine;
+}
+
 } // namespace Coroutine
+} // namespace Network
 } // namespace Afina

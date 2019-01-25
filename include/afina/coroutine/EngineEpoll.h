@@ -1,13 +1,17 @@
-#ifndef AFINA_COROUTINE_ENGINE_H
-#define AFINA_COROUTINE_ENGINE_H
+#ifndef AFINA_COROUTINE_ENGINE_EPOLL_H
+#define AFINA_COROUTINE_ENGINE_EPOLL_H
 
 #include <cstdint>
 #include <iostream>
 #include <map>
 #include <setjmp.h>
 #include <tuple>
+#include <stdexcept>
+#include <cassert>
+#include <cstring>
 
 namespace Afina {
+namespace Network {
 namespace Coroutine {
 
 /**
@@ -37,6 +41,10 @@ private:
         // To include routine in the different lists, such as "alive", "blocked", e.t.c
         struct context *prev = nullptr;
         struct context *next = nullptr;
+        
+        bool block = false;
+        
+        int events = 0;
     } context;
 
     /**
@@ -55,9 +63,16 @@ private:
     context *alive;
 
     /**
+     * List of blocked routines
+     */
+    context *blocked;
+
+    /**
      * Context to be returned finally
      */
     context *idle_ctx;
+    
+    void _swap_list(context * &list1, context * &list2, context * const &routine);
 
 protected:
     /**
@@ -76,7 +91,7 @@ protected:
     void Enter(context& ctx);
 
 public:
-    Engine() : StackBottom(0), cur_routine(nullptr), alive(nullptr) {}
+    Engine() : StackBottom(0), cur_routine(nullptr), alive(nullptr), blocked(nullptr) {}
     Engine(Engine &&) = delete;
     Engine(const Engine &) = delete;
 
@@ -98,6 +113,25 @@ public:
      * of the current routine, if there is no caller then this method has same semantics as yield
      */
     void sched(void *routine);
+    
+    /**
+     * Block current coroutine
+     */
+    void Wait();
+    
+    /**
+     * Unlock current coroutine
+     */
+    void Notify(context &ctx);
+    
+    /**
+     * Functions to help server
+     */
+    int GetCurEvents() const;
+    void SetEventsAndNotify(void * ptr, int events);
+    void NotifyAll();
+    bool NeedWait() const;
+    void * GetCurRoutinePointer() const;
 
     /**
      * Entry point into the engine. Prepare all internal mechanics and starts given function which is
@@ -109,7 +143,7 @@ public:
      * @param pointer to the main coroutine
      * @param arguments to be passed to the main coroutine
      */
-    template <typename... Ta> void start(void (*main)(Ta...), Ta &&... args) {
+    template <typename Tf, typename... Ta, typename Ti> void start(Ti && IdleFunc, Tf && main, Ta &&... args) {
         // To acquire stack begin, create variable on stack and remember its address
         char StackStartsHere;
         this->StackBottom = &StackStartsHere;
@@ -125,17 +159,21 @@ public:
             Store(*idle_ctx);
             sched(pc);
         }
+        
+        IdleFunc();
 
         // Shutdown runtime
         delete idle_ctx;
         this->StackBottom = 0;
     }
+    
+    void Stop();
 
     /**
      * Register new coroutine. It won't receive control until scheduled explicitely or implicitly. In case of some
      * errors function returns -1
      */
-    template <typename... Ta> void *run(void (*func)(Ta...), Ta &&... args) {
+    template <typename Tf, typename... Ta> void *run(Tf && func, Ta &&... args) {
         if (this->StackBottom == 0) {
             // Engine wasn't initialized yet
             return nullptr;
@@ -152,7 +190,21 @@ public:
             // context pointer, arguments and a pointer to the function comes from restored stack
 
             // invoke routine
-            func(std::forward<Ta>(args)...);
+            try {
+                func(std::forward<Ta>(args)...);
+            }
+            catch(...) {
+                std::cerr << "Something wrong in function\n";
+                
+                while (alive) {
+                    delete[] std::get<0>(alive->Stack);
+                }
+                while (blocked) {
+                    delete[] std::get<0>(blocked->Stack);
+                }
+                
+                Restore(*idle_ctx);
+            }
 
             // Routine has completed its execution, time to delete it. Note that we should be extremely careful in where
             // to pass control after that. We never want to go backward by stack as that would mean to go backward in
@@ -188,6 +240,8 @@ public:
         Store(*pc);
 
         // Add routine as alive double-linked list
+        pc->block = false;
+        
         pc->next = alive;
         alive = pc;
         if (pc->next != nullptr) {
@@ -199,6 +253,7 @@ public:
 };
 
 } // namespace Coroutine
+} // namespace Network
 } // namespace Afina
 
-#endif // AFINA_COROUTINE_ENGINE_H
+#endif // AFINA_COROUTINE_ENGINE_EPOLL_H
