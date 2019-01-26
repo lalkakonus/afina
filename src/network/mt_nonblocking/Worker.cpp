@@ -22,16 +22,15 @@ namespace MTnonblock {
 
 // See Worker.h
 Worker::Worker(std::shared_ptr<Afina::Storage> ps, std::shared_ptr<Afina::Logging::Service> pl,
-			   std::set<Connection*> &connections, std::mutex &mutex):
+			   std::set<Connection*> &connections):
     		   _pStorage(ps), _pLogging(pl), isRunning(false), 
-			   _epoll_fd(-1), _connections(connections), _mutex(mutex){}
+			   _epoll_fd(-1), _connections(connections) {}
 
 // See Worker.h
 Worker::~Worker() {}
 
 // See Worker.h
-Worker::Worker(Worker &&other): _connections(other._connections),
-								_mutex(other._mutex) {
+Worker::Worker(Worker &&other): _connections(other._connections) {
 	*this = std::move(other);
 }
 
@@ -44,7 +43,6 @@ Worker &Worker::operator=(Worker &&other){
     _epoll_fd = other._epoll_fd;
     other._epoll_fd = -1;
 	_connections = other._connections;
-	//_mutex = other._mutex;
     return *this;
 }
 
@@ -54,7 +52,8 @@ void Worker::Start(int epoll_fd) {
         assert(_epoll_fd == -1);
         _epoll_fd = epoll_fd;
         _logger = _pLogging->select("network.worker");
-        _thread = std::thread(&Worker::OnRun, this);
+        _logger->debug("Worker start");
+		_thread = std::thread(&Worker::OnRun, this);
     }
 }
 
@@ -92,7 +91,6 @@ void Worker::OnRun() {
             // on changes in OUTHER loop
             if (current_event.data.ptr == nullptr) {
                 continue;
-				// break; ??
             }
 
             // Some connection gets new data

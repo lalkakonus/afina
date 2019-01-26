@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.0.2 FATAL_ERROR)
 project(afina LANGUAGES C CXX)
 
-set(CMAKE_CXX_FLAGS  "${CMAKE_CXX_FLAGS} -O2")
+# set(CMAKE_CXX_FLAGS  "${CMAKE_CXX_FLAGS} -O2")
 set(CMAKE_CXX_STANDARD 14)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
@@ -91,7 +91,7 @@ MESSAGE( STATUS "VERSION_DIRTY: " ${AFINA_VERSION_DIRTY} )
 ##############################################################################
 # Sources
 ##############################################################################
-include(ECMEnableSanitizers)
+#include(ECMEnableSanitizers)
 
 ## Build services
 add_subdirectory(src)

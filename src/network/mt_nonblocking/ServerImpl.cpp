@@ -97,7 +97,7 @@ void ServerImpl::Start(uint16_t port, uint32_t n_acceptors, uint32_t n_workers) 
 
     _workers.reserve(n_workers);
     for (int i = 0; i < n_workers; i++) {
-        _workers.emplace_back(pStorage, pLogging, _connections, _mutex);
+        _workers.emplace_back(pStorage, pLogging, _connections);
         _workers.back().Start(_data_epoll_fd);
     }
 
@@ -204,7 +204,7 @@ void ServerImpl::OnRun() {
 					if (pc == nullptr) {
 						throw std::runtime_error("Failed to allocate connection");
 					}
-
+					
 					// Register connection in worker's epoll
 					pc->Start();
 					if (pc->isActive()) {
@@ -212,7 +212,6 @@ void ServerImpl::OnRun() {
 							pc->OnError();
 							delete pc;
 						} else {
-							std::unique_lock<std::mutex> lock(_mutex);
 							_connections.insert(pc);
 						}
 					}

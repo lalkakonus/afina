@@ -13,15 +13,16 @@ Connection::Connection(int socket_fd, std::shared_ptr<Afina::Storage> ps,
 	std::memset(&_event, 0, sizeof(struct epoll_event)); 
 	_event.data.ptr = this;
     _event.events = mask_read;
+	std::cout << "Connection ()\n";
 }
 
 
 // See Connection.h
 void Connection::Start() { 
-    _isActive.store(true);
     _logger = pLogging->select("network");
 	_logger->debug("Start new connection\n");
-    _sync.store(true, std::memory_order_release);
+    _sync.store(true);
+	_isActive.store(true);
 }
 
 // See Connection.h

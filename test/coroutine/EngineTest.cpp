@@ -2,6 +2,7 @@
 
 #include <iostream>
 #include <sstream>
+#include <stdio.h>
 
 #include <afina/coroutine/Engine.h>
 
